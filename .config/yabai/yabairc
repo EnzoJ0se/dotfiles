@@ -27,3 +27,4 @@ yabai -m mouse_drop_action swap
 
 yabai -m rule --add app="^Ajustes do Sistema$" manage=off
 yabai -m rule --add app="^Calculadora$" manage=off
+yabai -m rule --add app="^Finder$" manage=off
