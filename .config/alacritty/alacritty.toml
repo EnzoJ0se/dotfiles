@@ -8,8 +8,8 @@ padding.y = 8
 decorations = "Buttonless"
 opacity = 0.80
 blur = true
+option_as_alt = "OnlyLeft"
 
 [font]
 normal.family = "FiraCode Nerd Font"
 size = 16
-
