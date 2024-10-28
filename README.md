@@ -46,5 +46,12 @@ config config --local status.showUntrackedFiles no
 ```shell
 config submodule init
 config submodule update
+config branch --set-upstream-to=origin/main
 ```
 
+- To set the remote if necessary
+```shell
+config remote remove origin
+config remote add origin git@github.com:EnzoJ0se/dotfiles.git
+config remote -v
+```
