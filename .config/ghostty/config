@@ -13,6 +13,7 @@ background-blur-radius = 20
 
 font-size = 16
 font-family = "FiraMono Nerd Font Mono Regular"
-font-feature = "calt"
 font-feature = "liga"
-font-feature = "dlig"
+
+keybind = alt+left=unbind
+keybind = alt+right=unbind
