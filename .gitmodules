@@ -1,6 +1,8 @@
 [submodule ".personal"]
 	path = .personal
 	url = git@github.com:EnzoJ0se/personal.git
+	branch = main
 [submodule ".config/nvim"]
 	path = .config/nvim
 	url = git@github.com:EnzoJ0se/nvim.git
+	branch = main
