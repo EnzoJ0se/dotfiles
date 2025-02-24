@@ -41,7 +41,6 @@ alias update-ngt-dist="rm ../web-eloverde/node_modules/ng-tailwind -r && cp dist
 alias remove-dot-angular="cd ../web-eloverde && rm .angular -r && echo '------ REMOVED .angular ------'"
 alias test-ngt="build-ngt && update-ngt-dist && remove-dot-angular && npm run serve"
 
-
 ### MongoDB Aliases
 alias start-mongo-mac='brew services start mongodb-community@7.0'
 alias stop-mongo-mac='brew services stop mongodb-community@7.0'
