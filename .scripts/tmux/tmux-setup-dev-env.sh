@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+session="dev"
+
+tmux has-session -t $session 2> /dev/null
+
+if [ $? != 0 ]; then
+    # if session exists attach to it
+    if tmux has-session -t "$session" 2>/dev/null; then
+        tmux attach-session -t "$session"
+
+        exit 0
+    fi
+
+    # create session
+    tmux new-session -s $session -n "web" -c "$HOME/Work/Development/dev" -d
+
+    # setup editor window
+    tmux send-keys -t $session:web "cd $HOME/Work/Development/dev/frontend/web-eloverde" C-m
+    tmux send-keys -t $session:web "cl" C-m
+    tmux send-keys -t $session:web "vim" C-m
+
+    # setup build pane
+    tmux split-window -v -t $session:web -c "$HOME/Work/Development/dev/frontend/web-eloverde"
+    tmux send-keys -t $session:web.2 "cl" C-m
+    tmux send-keys -t $session:web.2 "npm run serve" C-m
+
+    # setup api window
+    tmux new-window  -t $session -n "api" -c "$HOME/Work/Development/dev/backend/api-eloverde"
+    tmux send-keys -t $session:api "cl" C-m
+    tmux send-keys -t $session:api "vim" C-m
+
+    # setup api serve pane
+    tmux split-window -v -t $session:api -c "$HOME/Work/Development/dev/backend/api-eloverde"
+    tmux send-keys -t $session:api.2 "cl" C-m
+    tmux send-keys -t $session:api.2 "p-serve" C-m
+    tmux split-window -h -t $session:api.2 -c "$HOME/Work/Development/dev/backend/api-eloverde"
+
+    # select web editor
+    tmux select-window -t $session:web.1
+fi
+
+if [ -n "$TMUX" ]; then
+    tmux switch-client -t $session
+else
+    tmux attach -t $session
+fi

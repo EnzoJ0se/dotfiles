@@ -52,3 +52,6 @@ bindkey '^y' end-of-line
 
 # Load Angular CLI autocompletion.
 source <(ng completion script)
+
+bindkey -s ^f "tmux-sessionizer\n"
+bindkey -s ^w "tmux-windownizer\n"
