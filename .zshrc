@@ -58,4 +58,4 @@ bindkey -s ^f "tmux-sessionizer\n"
 bindkey -s ^w "tmux-windownizer\n"
 
 # COMMANDS
-export PATH=$HOME/.scripts:$HOME/.scripts/tmux:$PATH
+export PATH=$(find $HOME/.scripts -type d | paste -sd ":" -):$PATH
