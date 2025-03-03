@@ -44,9 +44,3 @@ alias test-ngt="build-ngt && update-ngt-dist && remove-dot-angular && npm run se
 ### MongoDB Aliases
 alias start-mongo-mac='brew services start mongodb-community@7.0'
 alias stop-mongo-mac='brew services stop mongodb-community@7.0'
-
-### Commands
-alias tmux-sessionizer="~/.scripts/tmux/tmux-sessionizer.sh"
-alias tmux-windownizer="~/.scripts/tmux/tmux-windownizer.sh"
-alias setup-dev-env="~/.scripts/tmux/tmux-setup-dev-env.sh"
-alias setup-prod-env="~/.scripts/tmux/tmux-setup-prod-env.sh"
