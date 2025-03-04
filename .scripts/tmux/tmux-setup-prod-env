@@ -13,35 +13,35 @@ if [ $? != 0 ]; then
     fi
     
     # create session
-    tmux new-session -s $session -n "web" -c "$HOME/Work/Development/prod" -d
+    tmux new-session -s $session -n "web-eloverde" -c "$HOME/Work/Development/prod" -d
 
     # setup editor window
-    tmux send-keys -t $session:web "cd $HOME/Work/Development/prod/web-eloverde" C-m
-    tmux send-keys -t $session:web "cl" C-m
-    tmux send-keys -t $session:web "vim" C-m
+    tmux send-keys -t $session:web-eloverde "cd $HOME/Work/Development/prod/web-eloverde" C-m
+    tmux send-keys -t $session:web-eloverde "cl" C-m
+    tmux send-keys -t $session:web-eloverde "vim" C-m
 
     # setup build pane
-    tmux split-window -v -t $session:web -c "$HOME/Work/Development/prod/web-eloverde"
+    tmux split-window -v -t $session:web-eloverde -c "$HOME/Work/Development/prod/web-eloverde"
     tmux resize-pane -D 10
-    tmux send-keys -t $session:web.2 "cl" C-m
-    tmux send-keys -t $session:web.2 "npm run serve" C-m
+    tmux send-keys -t $session:web-eloverde.2 "cl" C-m
+    tmux send-keys -t $session:web-eloverde.2 "npm run serve" C-m
 
     # setup api window
-    tmux new-window  -t $session -n "api" -c "$HOME/Work/Development/prod/api-eloverde"
-    tmux send-keys -t $session:api "cl" C-m
-    tmux send-keys -t $session:api "vim" C-m
+    tmux new-window  -t $session -n "api-eloverde" -c "$HOME/Work/Development/prod/api-eloverde"
+    tmux send-keys -t $session:api-eloverde "cl" C-m
+    tmux send-keys -t $session:api-eloverde "vim" C-m
 
     # setup api serve pane
-    tmux split-window -v -t $session:api -c "$HOME/Work/Development/prod/api-eloverde"
+    tmux split-window -v -t $session:api-eloverde -c "$HOME/Work/Development/prod/api-eloverde"
     tmux resize-pane -D 10
-    tmux send-keys -t $session:api.2 "cl" C-m
-    tmux send-keys -t $session:api.2 "p-serve" C-m
+    tmux send-keys -t $session:api-eloverde.2 "cl" C-m
+    tmux send-keys -t $session:api-eloverde.2 "p-serve" C-m
 
-    tmux split-window -h -t $session:api.2 -c "$HOME/Work/Development/prod/api-eloverde"
+    tmux split-window -h -t $session:api-eloverde.2 -c "$HOME/Work/Development/prod/api-eloverde"
     tmux resize-pane -L 50
 
     # select web editor
-    tmux select-window -t $session:web.1
+    tmux select-window -t $session:web-eloverde.1
 fi
 
 if [ -n "$TMUX" ]; then

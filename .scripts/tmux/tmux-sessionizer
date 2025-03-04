@@ -5,7 +5,9 @@
 if [[ $# -eq 1 ]]; then
     selected=$1
 else
-    selected=$(find ~ ~/Work/Development/dev ~/Work/Development ~/Development  -mindepth 1 -maxdepth 2 -type d | fzf)
+    selected=$(find ~ ~/Work/Development/dev ~/Work/Development ~/Development \
+        -mindepth 1 -maxdepth 2 -type d \
+        -path "$HOME/.Trash" -prune -o -print | fzf)
 fi
 
 if [[ -z $selected ]]; then
