@@ -22,19 +22,24 @@ if [ $? != 0 ]; then
 
     # setup build pane
     tmux split-window -v -t $session:web -c "$HOME/Work/Development/dev/frontend/web-eloverde"
+    tmux resize-pane -D 10
     tmux send-keys -t $session:web.2 "cl" C-m
     tmux send-keys -t $session:web.2 "npm run serve" C-m
 
     # setup api window
     tmux new-window  -t $session -n "api" -c "$HOME/Work/Development/dev/backend/api-eloverde"
+    tmux resize-pane -D 10
     tmux send-keys -t $session:api "cl" C-m
     tmux send-keys -t $session:api "vim" C-m
 
     # setup api serve pane
     tmux split-window -v -t $session:api -c "$HOME/Work/Development/dev/backend/api-eloverde"
+    tmux resize-pane -D 10
     tmux send-keys -t $session:api.2 "cl" C-m
     tmux send-keys -t $session:api.2 "p-serve" C-m
+
     tmux split-window -h -t $session:api.2 -c "$HOME/Work/Development/dev/backend/api-eloverde"
+    tmux resize-pane -L 50
 
     # select web editor
     tmux select-window -t $session:web.1
