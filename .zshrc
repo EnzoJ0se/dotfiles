@@ -7,6 +7,9 @@ if [[ $OSTYPE == 'darwin'* ]]; then
 	export PATH=$PATH:/opt/homebrew/bin 
 	#Add mysql to PATH
 	export PATH=${PATH}:/usr/local/mysql/bin
+
+	### Love (lua game engine) Aliases
+	alias love="/Applications/love.app/Contents/MacOS/love"
 fi
 
 # Path to your oh-my-zsh installation.
@@ -59,3 +62,4 @@ bindkey -s ^w "tmux-windownizer\n"
 
 # COMMANDS
 export PATH=$(find $HOME/.scripts -type d | paste -sd ":" -):$PATH
+
