@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# $1 must be the backage name
+# $2 must be the path to the local package
+# $3 must be the build command (default: 'build-ngt')
+# $4 must be the full serve command (default: 'npm run serve')
+
+if [ ! -d "node_modules" ] || [ ! -f "package.json" ] || [ ! -f "angular.json" ]; then
+  echo "ERROR: this script must run inside a angular project DIR and must have 'node_modules' e 'package.json'."
+  exit 1
+fi
+
+if [ $# -lt 2 ]; then
+  echo "Usage: $0 <package_name> <local_package_path> [build_command] [full_serve_command]"
+  exit 1
+fi
+
+BUILD_COMMAND="${3:-build-ngt}"
+SERVE_COMMAND="${4:-npm run serve}"
+
+if [ ! -d "$2" ]; then
+  echo "ERROR: project '$2' not found."
+  exit 1
+fi
+
+npm --prefix "$2" run "$BUILD_COMMAND"
+
+if [ -d "node_modules/$1" ]; then
+	gio trash "node_modules/$1"
+	echo "------ DELETED PACKAGE COM NODE MODULES  ------"
+fi
+
+cp -r "$2/dist/ng-tailwind" "node_modules/$1"
+echo "------ DIST UPDATED ------"
+
+if [ -d ".angular" ]; then
+  gio trash ".angular"
+  echo "------ REMOVED .angular ------"
+fi
+
+$SERVE_COMMAND

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+export NODE_OPTIONS="--max_old_space_size=256"
+
+ROOT_DIR=$(dirname "$(npm root)")
+
+exec node --max_old_space_size=256 "$ROOT_DIR/node_modules/@angular/language-server" --stdio

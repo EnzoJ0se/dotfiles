@@ -50,3 +50,5 @@ if [ -n "$TMUX" ]; then
 else
     tmux attach -t $session
 fi
+
+exit 0
