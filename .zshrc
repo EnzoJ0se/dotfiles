@@ -19,7 +19,8 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
-ZSH_THEME="bira"
+# Old theme: bira
+ZSH_THEME="awesomepanda"
 
 # SETUP BARE DOTFILES REPO
 alias config="/usr/bin/git --git-dir=/$HOME/.dotfiles/ --work-tree=$HOME"
@@ -47,6 +48,9 @@ fi
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 eval "$(fzf --zsh)"
 
+# Python setup
+eval "$(pyenv init --path)"
+
 # SOURCE MY ALIASES
 source $HOME/.aliases
 
@@ -62,4 +66,3 @@ bindkey -s ^w "tmux-windownizer\n"
 
 # COMMANDS
 export PATH=$(find $HOME/.scripts -type d | paste -sd ":" -):$PATH
-
