@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 
-selected=$(fzf --preview 'cat {}')
+selected=$( \
+    find ~ ~/Work/Development/dev ~/Work/Notes ~/Work/SQL ~/Work/Development ~/Development -mindepth 1 -maxdepth 2 \
+    -path "$HOME/.Trash" -prune -o -print \
+    | fzf --preview 'cat {}' \
+)
 
 if [[ -z $selected ]]; then
     exit 0
 fi
 
-vim $selected
+nvim $selected

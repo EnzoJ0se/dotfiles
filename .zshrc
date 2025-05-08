@@ -66,3 +66,5 @@ bindkey -s ^w "tmux-windownizer\n"
 
 # COMMANDS
 export PATH=$(find $HOME/.scripts -type d | paste -sd ":" -):$PATH
+export PATH="/opt/homebrew/opt/php@8.3/bin:$PATH"
+export PATH="/opt/homebrew/opt/php@8.3/sbin:$PATH"
