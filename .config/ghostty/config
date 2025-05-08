@@ -8,10 +8,10 @@ cursor-style = "block"
 shell-integration-features = no-cursor
 
 theme = "tokyonight"
-background-opacity = 0.80
+background-opacity = 0.9
 background-blur-radius = 20
 
-font-size = 16
+font-size = 18
 font-family = "FiraMono Nerd Font Mono Regular"
 font-feature = "liga"
 
