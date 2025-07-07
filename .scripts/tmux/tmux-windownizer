@@ -10,26 +10,24 @@ else
         -path "$HOME/.Trash" -prune -o -print | fzf)
 fi
 
+
 if [[ -z $selected ]]; then
+    echo "No dir selected."
     exit 0
 fi
 
+if [[ ! -d "$selected" ]]; then
+    echo "Erro: directory not found!"
+    exit 1
+fi
+
 branch_name=$(basename "$selected" | tr . _)
-clean_name=$(echo $branch_name | tr "./" "__")
+clean_name=$(echo "$branch_name" | tr "./" "__")
 
-if ! tmux list-sessions 2>/dev/null | grep -q .; then
-    tmux new-session -n $clean_name -c $selected -d
+if [ -z "$TMUX" ]; then
+    echo "You must be inside a tmux session to run this script."
+    exit 1
 fi
 
-session_name=$(tmux display-message -p "#S")
-target="$session_name:$clean_name"
-
-if ! tmux has-session -t $target 2> /dev/null; then
-    tmux neww -dn $clean_name -c $selected
-fi
-
-if [ -n "$TMUX" ]; then
-    tmux select-window -t $target
-else
-    tmux attach -t $session_name
-fi
+# Adiciona uma nova janela à sessão atual
+tmux new-window -n "$clean_name" -c "$selected"

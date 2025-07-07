@@ -68,3 +68,4 @@ bindkey -s ^w "tmux-windownizer\n"
 export PATH=$(find $HOME/.scripts -type d | paste -sd ":" -):$PATH
 export PATH="/opt/homebrew/opt/php@8.3/bin:$PATH"
 export PATH="/opt/homebrew/opt/php@8.3/sbin:$PATH"
+export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
