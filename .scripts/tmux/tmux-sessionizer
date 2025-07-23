@@ -7,7 +7,7 @@ if [[ $# -eq 1 ]]; then
 else
     selected=$(find ~ ~/Work/Development/dev ~/Work/Development ~/Development \
         -mindepth 1 -maxdepth 2 -type d \
-        -path "$HOME/.Trash" -prune -o -print | fzf)
+        -path "$HOME/.Trash" -prune -o -print | fzf --bind 'ctrl-y:accept')
 fi
 
 if [[ -z $selected ]]; then
