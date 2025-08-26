@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Recebe parâmetros
+USER="$1"
+PASS="$2"
+HOST="localhost" 
+
+# Verifica se mysql está instalado
+if ! command -v mysql >/dev/null 2>&1; then
+  echo ""
+  exit 0
+fi
+
+if [ -z "$USER" ] || [ -z "$PASS" ]; then
+  echo "Uso: $0 <user> <password> [host]"
+  exit 1
+fi
+
+mysql -u "$USER" -p"$PASS" -h "$HOST" -e \
+"SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema','mysql','performance_schema','sys');" \
+-s --skip-column-names
