@@ -7,7 +7,7 @@ window-padding-y = 8
 cursor-style = "block"
 shell-integration-features = no-cursor
 
-theme = "tokyonight"
+theme = "Night Owl"
 background-opacity = 0.9
 background-blur-radius = 20
 

@@ -5,7 +5,7 @@ start-at-login = true
 enable-normalization-flatten-containers = true
 enable-normalization-opposite-orientation-for-nested-containers = true
 
-accordion-padding = 10
+accordion-padding = 15
 default-root-container-layout = 'tiles'
 default-root-container-orientation = 'auto'
 
@@ -40,7 +40,7 @@ alt-shift-minus = 'resize smart -50'
 alt-shift-equal = 'resize smart +50'
 
 alt-enter = 'exec-and-forget open -n /Applications/Ghostty.app'
-alt-b = 'exec-and-forget open -n /Applications/Firefox.app'
+alt-b = "exec-and-forget /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --new-window about:blank"
 alt-s = 'exec-and-forget open -a /Applications/Slack.app'
 alt-w = 'exec-and-forget open -a /Applications/WhatsApp.app'
 alt-d = 'exec-and-forget open -a /Applications/MySQLWorkbench.app'
