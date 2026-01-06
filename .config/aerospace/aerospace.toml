@@ -1,5 +1,13 @@
+# Run Sketchybar together with AeroSpace
+# sketchybar has a built-in detection of already running process,
+# so it won't be run twice on AeroSpace restart
 after-login-command = []
-after-startup-command = []
+after-startup-command = ['exec-and-forget sketchybar']
+
+# Notify Sketchybar about workspace change
+exec-on-workspace-change = ['/bin/bash', '-c',
+    'sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=$AEROSPACE_FOCUSED_WORKSPACE'
+]
 
 start-at-login = true
 enable-normalization-flatten-containers = true
@@ -18,7 +26,11 @@ inner.horizontal = 10
 inner.vertical =   10
 outer.left =       10
 outer.bottom =     10
-outer.top =        10
+outer.top =     [
+  # offset of 32 on internal display, because of notch (16" MPB)
+  { monitor.'built-in.*' = 10 },
+  38
+]
 outer.right =      10
 
 [mode.main.binding]
@@ -55,13 +67,6 @@ alt-6 = 'workspace 6'
 alt-7 = 'workspace 7'
 alt-8 = 'workspace 8'
 
-alt-n = 'workspace N'
-alt-y = 'workspace Y'
-alt-u = 'workspace U'
-alt-i = 'workspace I'
-alt-o = 'workspace O'
-alt-p = 'workspace P'
-
 alt-shift-1 = 'move-node-to-workspace 1'
 alt-shift-2 = 'move-node-to-workspace 2'
 alt-shift-3 = 'move-node-to-workspace 3'
@@ -70,13 +75,6 @@ alt-shift-5 = 'move-node-to-workspace 5'
 alt-shift-6 = 'move-node-to-workspace 6'
 alt-shift-7 = 'move-node-to-workspace 7'
 alt-shift-8 = 'move-node-to-workspace 8'
-
-alt-shift-n = 'move-node-to-workspace N'
-alt-shift-y = 'move-node-to-workspace Y'
-alt-shift-u = 'move-node-to-workspace U'
-alt-shift-i = 'move-node-to-workspace I'
-alt-shift-o = 'move-node-to-workspace O'
-alt-shift-p = 'move-node-to-workspace P'
 
 alt-tab = 'workspace-back-and-forth'
 alt-shift-f = 'layout floating tiling'
