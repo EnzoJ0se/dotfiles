@@ -16,15 +16,17 @@ fi
 
 base_name=$(basename "$selected" | tr . _ | tr -c '[:alnum:]' '_')
 base_name="${base_name%%_}"
-session_name=$base_name
+window_name=$base_name
+
+session_name="space"
 index=1
 
 while tmux has-session -t="$session_name" 2>/dev/null; do
-    session_name="${base_name}_${index}"
+    session_name="space_${index}"
     ((index++))
 done
 
-tmux new-session -ds "$session_name" -c "$selected"
+tmux new-session -ds "$session_name" -n "$window_name" -c "$selected"
 
 if [ -n "$TMUX" ]; then
     tmux switch-client -t "$session_name"
