@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 
 session="prod"
+should_attach=1
+
+for arg in "$@"; do
+    case "$arg" in
+        --no-attach|-n)
+            should_attach=0
+            ;;
+        *)
+            echo "Uso: $0 [--no-attach|-n]"
+            exit 1
+            ;;
+    esac
+done
 
 tmux has-session -t $session 2> /dev/null
 
@@ -20,34 +33,30 @@ if [ $? != 0 ]; then
     tmux send-keys -t $session:web-eloverde "cl" C-m
     tmux send-keys -t $session:web-eloverde "vim" C-m
 
-    # setup build pane
-    tmux split-window -v -t $session:web-eloverde -c "$HOME/Work/Development/prod/web-eloverde"
-    tmux resize-pane -D 10
-    tmux send-keys -t $session:web-eloverde.2 "cl" C-m
-    tmux send-keys -t $session:web-eloverde.2 "npm run serve" C-m
-
     # setup api window
     tmux new-window  -t $session -n "api-eloverde" -c "$HOME/Work/Development/prod/api-eloverde"
     tmux send-keys -t $session:api-eloverde "cl" C-m
     tmux send-keys -t $session:api-eloverde "vim" C-m
 
-    # setup api serve pane
-    tmux split-window -v -t $session:api-eloverde -c "$HOME/Work/Development/prod/api-eloverde"
-    tmux resize-pane -D 10
-    tmux send-keys -t $session:api-eloverde.2 "cl" C-m
-    tmux send-keys -t $session:api-eloverde.2 "p-serve" C-m
+    # setup term window with previous extra panes
+    tmux new-window -t $session -n "term" -c "$HOME/Work/Development/prod/web-eloverde"
+    tmux send-keys -t $session:term "cl" C-m
 
-    tmux split-window -h -t $session:api-eloverde.2 -c "$HOME/Work/Development/prod/api-eloverde"
-    tmux resize-pane -L 50
+    tmux split-window -v -t $session:term -c "$HOME/Work/Development/prod/api-eloverde"
+    tmux send-keys -t $session:term.2 "cl" C-m
+
+    tmux split-window -h -t $session:term.2 -c "$HOME/Work/Development/prod/api-eloverde"
 
     # select web editor
     tmux select-window -t $session:web-eloverde.1
 fi
 
-if [ -n "$TMUX" ]; then
-    tmux switch-client -t $session
-else
-    tmux attach -t $session
+if [ "$should_attach" -eq 1 ]; then
+    if [ -n "$TMUX" ]; then
+        tmux switch-client -t $session
+    else
+        tmux attach -t $session
+    fi
 fi
 
 exit 0

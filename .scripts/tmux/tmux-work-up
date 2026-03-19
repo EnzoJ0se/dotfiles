@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+tmux-setup-dev-env --no-attach
+tmux-setup-prod-env --no-attach
+
+if ! tmux has-session -t Notes 2>/dev/null; then
+  tmux new-session -d -s Notes -c "/Users/enzojose/Work/Notes"
+  tmux send-keys -t Notes "cl" C-m
+  tmux send-keys -t Notes "vim" C-m
+fi
+
+tmux attach-session -t dev
