@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 
 session="prod"
-should_attach=1
+skip_attach=0
 
-for arg in "$@"; do
-    case "$arg" in
-        --no-attach|-n)
-            should_attach=0
-            ;;
-        *)
-            echo "Uso: $0 [--no-attach|-n]"
-            exit 1
-            ;;
-    esac
-done
+if [ "${1:-}" = "--no-attach" ] || [ "${1:-}" = "-n" ]; then
+    skip_attach=1
+fi
 
 tmux has-session -t $session 2> /dev/null
 
@@ -51,7 +43,7 @@ if [ $? != 0 ]; then
     tmux select-window -t $session:web-eloverde.1
 fi
 
-if [ "$should_attach" -eq 1 ]; then
+if [ "$skip_attach" -eq 0 ]; then
     if [ -n "$TMUX" ]; then
         tmux switch-client -t $session
     else
