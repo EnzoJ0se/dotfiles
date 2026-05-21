@@ -2,45 +2,39 @@
 
 session="dev"
 skip_attach=0
+workspace="$HOME/Work/Development/workspace-dev"
+web_project="$workspace/web-eloverde"
+api_project="$workspace/api-eloverde"
 
 if [ "${1:-}" = "--no-attach" ] || [ "${1:-}" = "-n" ]; then
     skip_attach=1
 fi
 
-tmux has-session -t $session 2> /dev/null
+tmux has-session -t "$session" 2>/dev/null
 
 if [ $? != 0 ]; then
-    # if session exists attach to it
-    if tmux has-session -t "$session" 2>/dev/null; then
-        tmux attach-session -t "$session"
-
-        exit 0
-    fi
 
     # create session
-    tmux new-session -s $session -n "web-eloverde" -c "$HOME/Work/Development/dev" -d
+    tmux new-session -s "$session" -n "workspace" -c "$workspace" -d
 
-    # setup editor window
-    tmux send-keys -t $session:web-eloverde "cd $HOME/Work/Development/dev/frontend/web-eloverde" C-m
-    tmux send-keys -t $session:web-eloverde "cl" C-m
-    tmux send-keys -t $session:web-eloverde "vim" C-m
+    # setup web project window
+    tmux new-window -t "$session" -n "web-eloverde" -c "$web_project"
+    tmux send-keys -t "$session":web-eloverde "cl" C-m
+    tmux send-keys -t "$session":web-eloverde "vim" C-m
+    tmux split-window -v -p 33 -t "$session":web-eloverde -c "$web_project"
+    tmux send-keys -t "$session":web-eloverde.2 "cl" C-m
 
-    # setup api window
-    tmux new-window  -t $session -n "api-eloverde" -c "$HOME/Work/Development/dev/backend/api-eloverde"
-    tmux send-keys -t $session:api-eloverde "cl" C-m
-    tmux send-keys -t $session:api-eloverde "vim" C-m
+    # setup api project window
+    tmux new-window -t "$session" -n "api-eloverde" -c "$api_project"
+    tmux send-keys -t "$session":api-eloverde "cl" C-m
+    tmux send-keys -t "$session":api-eloverde "vim" C-m
+    tmux split-window -v -p 33 -t "$session":api-eloverde -c "$api_project"
+    tmux send-keys -t "$session":api-eloverde.2 "cl" C-m
+    tmux split-window -h -t "$session":api-eloverde.2 -c "$api_project"
+    tmux send-keys -t "$session":api-eloverde.3 "cl" C-m
 
-    # setup term window with previous extra panes
-    tmux new-window -t $session -n "term" -c "$HOME/Work/Development/dev/frontend/web-eloverde"
-    tmux send-keys -t $session:term "cl" C-m
-
-    tmux split-window -v -t $session:term -c "$HOME/Work/Development/dev/backend/api-eloverde"
-    tmux send-keys -t $session:term.2 "cl" C-m
-
-    tmux split-window -h -t $session:term.2 -c "$HOME/Work/Development/dev/backend/api-eloverde"
-
-    # select web editor
-    tmux select-window -t $session:web-eloverde.1
+    # select workspace window
+    tmux select-window -t "$session":workspace
 fi
 
 if [ "$skip_attach" -eq 0 ]; then
