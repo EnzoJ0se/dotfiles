@@ -2,7 +2,13 @@
 
 set -euo pipefail
 
-WORKSPACES_ROOT="$HOME/Development/workspaces"
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
+fi
+
+WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
 
 print_help() {
   cat <<'EOF'

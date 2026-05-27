@@ -2,13 +2,61 @@
 
 set -euo pipefail
 
-tmux-setup-dev-env --no-attach
-tmux-setup-prod-env --no-attach
-
-if ! tmux has-session -t Notes 2>/dev/null; then
-  tmux new-session -d -s Notes -c "/Users/enzojose/Work/Notes"
-  tmux send-keys -t Notes "cl" C-m
-  tmux send-keys -t Notes "vim" C-m
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
 fi
 
-tmux attach-session -t dev
+NOTES_DIR="${WS_NOTES_DIR:-$HOME/Work/Notes}"
+EDITOR_CMD="${WS_EDITOR:-nvim}"
+CLEAR_CMD="${WS_CLEAR_CMD:-clear}"
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+TMUX_SETUP_ENV_CMD="$SCRIPT_DIR/tmux-setup-env"
+
+if [ ! -x "$TMUX_SETUP_ENV_CMD" ]; then
+  printf "Error: tmux-setup-env not found or not executable: %s\n" "$TMUX_SETUP_ENV_CMD" >&2
+  exit 1
+fi
+
+if ! command -v "$CLEAR_CMD" >/dev/null 2>&1; then
+  CLEAR_CMD="clear"
+fi
+
+if ! command -v "$EDITOR_CMD" >/dev/null 2>&1; then
+  printf "Error: editor command not found: %s\n" "$EDITOR_CMD" >&2
+  exit 1
+fi
+
+if [ ! -d "$NOTES_DIR" ]; then
+  printf "Error: notes directory not found: %s\n" "$NOTES_DIR" >&2
+  exit 1
+fi
+
+session_file=$(mktemp)
+trap 'rm -f "$session_file"' EXIT
+
+"$TMUX_SETUP_ENV_CMD" --no-attach --session-file "$session_file"
+
+workspace_session=""
+if [ -f "$session_file" ]; then
+  IFS= read -r workspace_session < "$session_file" || true
+fi
+
+if [ -z "$workspace_session" ]; then
+  printf "Cancelled.\n"
+  exit 0
+fi
+
+if ! tmux has-session -t Notes 2>/dev/null; then
+  tmux new-session -d -s Notes -c "$NOTES_DIR"
+  tmux send-keys -t Notes "$CLEAR_CMD" C-m
+  tmux send-keys -t Notes "$EDITOR_CMD" C-m
+fi
+
+if [ -n "${TMUX:-}" ]; then
+  tmux switch-client -t "$workspace_session"
+else
+  tmux attach-session -t "$workspace_session"
+fi

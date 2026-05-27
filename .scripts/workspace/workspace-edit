@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
+fi
+
+WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
+SEARCH_ROOTS_RAW="${WS_SEARCH_ROOTS:-$HOME/Development/projects:$HOME/Work/Development}"
+IFS=':' read -r -a SEARCH_ROOTS <<< "$SEARCH_ROOTS_RAW"
+
+print_help() {
+  cat <<'EOF'
+Usage:
+  workspace-edit
+  workspace-edit <workspace_name>
+
+Description:
+  Edit an existing workspace by adding or removing selected projects.
+
+Options:
+  -h, --help   Show this help message.
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "Error: required command not found: %s\n" "$1" >&2
+    exit 1
+  fi
+}
+
+list_workspaces() {
+  if [ ! -d "$WORKSPACES_ROOT" ]; then
+    return
+  fi
+  find "$WORKSPACES_ROOT" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort
+}
+
+select_workspace_name() {
+  local selected
+  selected=$(list_workspaces | fzf --prompt="Select workspace > " --height=60% --header="ENTER confirm | ESC cancel") || true
+  printf "%s" "$selected"
+}
+
+detect_base_branch() {
+  local repo="$1"
+  if git -C "$repo" show-ref --verify --quiet refs/heads/main || git -C "$repo" ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+    printf "main"
+    return
+  fi
+  if git -C "$repo" show-ref --verify --quiet refs/heads/master || git -C "$repo" ls-remote --exit-code --heads origin master >/dev/null 2>&1; then
+    printf "master"
+    return
+  fi
+  printf ""
+}
+
+base_branch_exists() {
+  local repo="$1"
+  local branch="$2"
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch" || \
+    git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+}
+
+branch_exists() {
+  local repo="$1"
+  local branch="$2"
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"
+}
+
+choose_workspace_action() {
+  local action
+  action=$(printf "%s\n" "add projects" "remove projects" "exit" | fzf --prompt="Edit action > " --height=40% --header="ENTER confirm | ESC cancel") || true
+  printf "%s" "$action"
+}
+
+add_projects() {
+  local workspace_name="$1"
+  local workspace_path="$2"
+  local workspace_branch="$workspace_name"
+  local existing_names
+
+  existing_names=$(find "$workspace_path" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort || true)
+
+  repo_entries=()
+  for root in "${usable_search_roots[@]}"; do
+    while IFS= read -r git_dir; do
+      repo_path=${git_dir%/.git}
+      repo_name=$(basename "$repo_path")
+      if printf "%s\n" "$existing_names" | grep -Fx "$repo_name" >/dev/null 2>&1; then
+        continue
+      fi
+      repo_entries+=("$repo_name | $repo_path")
+    done < <(find "$root" -mindepth 1 -maxdepth 4 -type d -name .git)
+  done
+
+  if [ "${#repo_entries[@]}" -eq 0 ]; then
+    printf "No additional projects available to add.\n"
+    return
+  fi
+
+  selected_lines=()
+  while IFS= read -r line; do
+    selected_lines+=("$line")
+  done < <(
+    printf "%s\n" "${repo_entries[@]}" | sort -u | \
+      fzf --multi --prompt="Select projects to add > " --header="TAB mark | ENTER confirm" --height=70%
+  )
+
+  if [ "${#selected_lines[@]}" -eq 0 ]; then
+    printf "No projects selected.\n"
+    return
+  fi
+
+  repos=()
+  names=()
+  bases=()
+  actions=()
+  destinations=()
+
+  for line in "${selected_lines[@]}"; do
+    repo_path=${line#* | }
+    repo_name=$(basename "$repo_path")
+    destination="$workspace_path/$repo_name"
+    base_branch=$(detect_base_branch "$repo_path")
+
+    if [ -z "$base_branch" ]; then
+      printf "Repo '%s' has no main/master. Enter base branch (or leave blank to skip): " "$repo_name"
+      read -r base_branch
+      if [ -z "$base_branch" ]; then
+        repos+=("$repo_path")
+        names+=("$repo_name")
+        bases+=("-")
+        actions+=("skip-no-base")
+        destinations+=("$destination")
+        continue
+      fi
+    fi
+
+    if ! base_branch_exists "$repo_path" "$base_branch"; then
+      repos+=("$repo_path")
+      names+=("$repo_name")
+      bases+=("$base_branch")
+      actions+=("skip-no-base")
+      destinations+=("$destination")
+      continue
+    fi
+
+    if [ -e "$destination" ]; then
+      action="skip-dest-exists"
+    elif branch_exists "$repo_path" "$workspace_branch"; then
+      action="reuse-branch"
+    else
+      action="create-branch"
+    fi
+
+    repos+=("$repo_path")
+    names+=("$repo_name")
+    bases+=("$base_branch")
+    actions+=("$action")
+    destinations+=("$destination")
+  done
+
+  printf "\nAdd plan for workspace '%s':\n" "$workspace_name"
+  printf "%-24s %-10s %-18s %s\n" "PROJECT" "BASE" "ACTION" "DESTINATION"
+  printf "%-24s %-10s %-18s %s\n" "-------" "----" "------" "-----------"
+  for i in "${!repos[@]}"; do
+    printf "%-24s %-10s %-18s %s\n" "${names[$i]}" "${bases[$i]}" "${actions[$i]}" "${destinations[$i]}"
+  done
+
+  printf "\nConfirm add selected projects? [y/N]: "
+  read -r confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    printf "Cancelled.\n"
+    return
+  fi
+
+  created=0
+  skipped=0
+  failed=0
+
+  for i in "${!repos[@]}"; do
+    repo_path="${repos[$i]}"
+    repo_name="${names[$i]}"
+    base_branch="${bases[$i]}"
+    action="${actions[$i]}"
+    destination="${destinations[$i]}"
+
+    case "$action" in
+      skip-no-base|skip-dest-exists)
+        printf "Skipping %s (%s).\n" "$repo_name" "$action"
+        skipped=$((skipped + 1))
+        ;;
+      reuse-branch)
+        if git -C "$repo_path" worktree add "$destination" "$workspace_branch"; then
+          printf "Added %s using existing branch '%s'.\n" "$repo_name" "$workspace_branch"
+          created=$((created + 1))
+        else
+          printf "Failed adding %s.\n" "$repo_name" >&2
+          failed=$((failed + 1))
+        fi
+        ;;
+      create-branch)
+        if git -C "$repo_path" worktree add -b "$workspace_branch" "$destination" "$base_branch"; then
+          printf "Added %s from %s with branch '%s'.\n" "$repo_name" "$base_branch" "$workspace_branch"
+          created=$((created + 1))
+        else
+          printf "Failed adding %s.\n" "$repo_name" >&2
+          failed=$((failed + 1))
+        fi
+        ;;
+    esac
+  done
+
+  printf "\nAdd complete. Created: %d | Skipped: %d | Failed: %d\n" "$created" "$skipped" "$failed"
+}
+
+remove_projects() {
+  local workspace_name="$1"
+  local workspace_path="$2"
+
+  project_dirs=()
+  while IFS= read -r dir; do
+    if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      project_dirs+=("$dir")
+    fi
+  done < <(find "$workspace_path" -mindepth 1 -maxdepth 1 -type d | sort)
+
+  if [ "${#project_dirs[@]}" -eq 0 ]; then
+    printf "No git projects found in workspace '%s'.\n" "$workspace_name"
+    return
+  fi
+
+  selected_lines=()
+  while IFS= read -r line; do
+    selected_lines+=("$line")
+  done < <(
+    printf "%s\n" "${project_dirs[@]}" | fzf --multi --prompt="Select projects to remove > " --header="TAB mark | ENTER confirm" --height=70%
+  )
+
+  if [ "${#selected_lines[@]}" -eq 0 ]; then
+    printf "No projects selected.\n"
+    return
+  fi
+
+  names=()
+  actions=()
+  targets=()
+
+  for dir in "${selected_lines[@]}"; do
+    name=$(basename "$dir")
+    if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+      action="blocked-dirty"
+    else
+      action="remove"
+    fi
+    names+=("$name")
+    actions+=("$action")
+    targets+=("$dir")
+  done
+
+  printf "\nRemove plan for workspace '%s':\n" "$workspace_name"
+  printf "%-24s %-16s %s\n" "PROJECT" "ACTION" "PATH"
+  printf "%-24s %-16s %s\n" "-------" "------" "----"
+  for i in "${!targets[@]}"; do
+    printf "%-24s %-16s %s\n" "${names[$i]}" "${actions[$i]}" "${targets[$i]}"
+  done
+
+  printf "\nConfirm remove selected projects? [y/N]: "
+  read -r confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    printf "Cancelled.\n"
+    return
+  fi
+
+  removed=0
+  blocked=0
+  failed=0
+
+  for i in "${!targets[@]}"; do
+    dir="${targets[$i]}"
+    name="${names[$i]}"
+    action="${actions[$i]}"
+
+    if [ "$action" = "blocked-dirty" ]; then
+      printf "Blocked %s: local changes detected.\n" "$name"
+      blocked=$((blocked + 1))
+      continue
+    fi
+
+    if git -C "$dir" worktree remove "$dir"; then
+      printf "Removed %s.\n" "$name"
+      removed=$((removed + 1))
+    else
+      printf "Failed removing %s.\n" "$name" >&2
+      failed=$((failed + 1))
+    fi
+  done
+
+  printf "\nRemove complete. Removed: %d | Blocked: %d | Failed: %d\n" "$removed" "$blocked" "$failed"
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  print_help
+  exit 0
+fi
+
+if [ "$#" -gt 1 ]; then
+  printf "Error: too many arguments.\n\n" >&2
+  print_help
+  exit 1
+fi
+
+require_cmd git
+require_cmd fzf
+require_cmd find
+
+usable_search_roots=()
+for root in "${SEARCH_ROOTS[@]}"; do
+  if [ -z "$root" ]; then
+    continue
+  fi
+  if [ -d "$root" ]; then
+    usable_search_roots+=("$root")
+  else
+    printf "Warning: search root not found, skipping: %s\n" "$root" >&2
+  fi
+done
+
+if [ "${#usable_search_roots[@]}" -eq 0 ]; then
+  printf "Error: no valid search roots available.\n" >&2
+  exit 1
+fi
+
+workspace_name="${1:-}"
+if [ -z "$workspace_name" ]; then
+  workspace_name=$(select_workspace_name)
+  if [ -z "$workspace_name" ]; then
+    printf "Cancelled.\n"
+    exit 0
+  fi
+fi
+
+workspace_path="$WORKSPACES_ROOT/$workspace_name"
+if [ ! -d "$workspace_path" ]; then
+  printf "Workspace not found: %s\n" "$workspace_path" >&2
+  exit 2
+fi
+
+action=$(choose_workspace_action)
+case "$action" in
+  "add projects")
+    add_projects "$workspace_name" "$workspace_path"
+    ;;
+  "remove projects")
+    remove_projects "$workspace_name" "$workspace_path"
+    ;;
+  *)
+    printf "Cancelled.\n"
+    ;;
+esac

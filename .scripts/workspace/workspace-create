@@ -2,11 +2,15 @@
 
 set -euo pipefail
 
-WORKSPACES_ROOT="$HOME/Development/workspaces"
-SEARCH_ROOTS=(
-  "$HOME/Development/projects"
-  "$HOME/Work/Development"
-)
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
+fi
+
+WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
+SEARCH_ROOTS_RAW="${WS_SEARCH_ROOTS:-$HOME/Development/projects:$HOME/Work/Development}"
+IFS=':' read -r -a SEARCH_ROOTS <<< "$SEARCH_ROOTS_RAW"
 
 print_help() {
   cat <<'EOF'
@@ -146,12 +150,22 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+usable_search_roots=()
 for root in "${SEARCH_ROOTS[@]}"; do
-  if [ ! -d "$root" ]; then
-    printf "Error: search root not found: %s\n" "$root" >&2
-    exit 1
+  if [ -z "$root" ]; then
+    continue
+  fi
+  if [ -d "$root" ]; then
+    usable_search_roots+=("$root")
+  else
+    printf "Warning: search root not found, skipping: %s\n" "$root" >&2
   fi
 done
+
+if [ "${#usable_search_roots[@]}" -eq 0 ]; then
+  printf "Error: no valid search roots available.\n" >&2
+  exit 1
+fi
 
 mkdir -p "$WORKSPACES_ROOT"
 
@@ -189,7 +203,7 @@ if [ -d "$workspace_path" ]; then
 fi
 
 repo_entries=()
-for root in "${SEARCH_ROOTS[@]}"; do
+for root in "${usable_search_roots[@]}"; do
   while IFS= read -r git_dir; do
     repo_dir=${git_dir%/.git}
     repo_name=$(basename "$repo_dir")

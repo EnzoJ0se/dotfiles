@@ -2,10 +2,17 @@
 
 set -euo pipefail
 
-WORKSPACES_ROOT="$HOME/Development/workspaces"
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
+fi
+
+WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKSPACE_CREATE_CMD="$SCRIPT_DIR/workspace-create"
 WORKSPACE_REMOVE_CMD="$SCRIPT_DIR/workspace-remove"
+WORKSPACE_EDIT_CMD="$SCRIPT_DIR/workspace-edit"
 
 print_help() {
   cat <<'EOF'
@@ -13,6 +20,7 @@ Usage:
   workspace-menu
   workspace-menu open <workspace_name>
   workspace-menu create <workspace_name>
+  workspace-menu edit <workspace_name>
   workspace-menu remove <workspace_name>
   workspace-menu list
 
@@ -21,6 +29,7 @@ Description:
 
 Behavior:
   - open/create: opens target in tmux-sessionizer and exits.
+  - edit: calls workspace-edit.
   - remove: calls workspace-remove.
 
 Options:
@@ -95,9 +104,26 @@ create_and_open_workspace() {
   open_workspace "$selected"
 }
 
+create_and_open_workspace_named() {
+  local name="$1"
+  local path
+  path=$(workspace_path_from_name "$name")
+  "$WORKSPACE_CREATE_CMD" "$name"
+  if [ ! -d "$path" ]; then
+    printf "Workspace creation did not produce: %s\n" "$path" >&2
+    exit 1
+  fi
+  open_workspace "$name"
+}
+
 remove_workspace() {
   local name="$1"
   "$WORKSPACE_REMOVE_CMD" "$name"
+}
+
+edit_workspace() {
+  local name="$1"
+  "$WORKSPACE_EDIT_CMD" "$name"
 }
 
 select_workspace_name() {
@@ -108,7 +134,7 @@ select_workspace_name() {
 
 interactive_menu() {
   local action
-  action=$(printf "%s\n" "open" "create" "remove" "exit" | fzf --prompt="Workspace action > " --height=40% --header="ENTER confirm | ESC cancel") || true
+  action=$(printf "%s\n" "open" "create" "edit" "remove" "exit" | fzf --prompt="Workspace action > " --height=40% --header="ENTER confirm | ESC cancel") || true
 
   if [ -z "$action" ] || [ "$action" = "exit" ]; then
     exit 0
@@ -140,6 +166,17 @@ interactive_menu() {
     remove_workspace "$selected"
     exit 0
   fi
+
+  if [ "$action" = "edit" ]; then
+    local selected
+    selected=$(select_workspace_name)
+    if [ -z "$selected" ]; then
+      printf "Cancelled.\n"
+      exit 0
+    fi
+    edit_workspace "$selected"
+    exit 0
+  fi
 }
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -150,6 +187,7 @@ fi
 require_cmd git
 require_cmd "$WORKSPACE_CREATE_CMD"
 require_cmd "$WORKSPACE_REMOVE_CMD"
+require_cmd "$WORKSPACE_EDIT_CMD"
 require_cmd tmux-sessionizer
 
 if [ "$#" -eq 0 ]; then
@@ -171,7 +209,7 @@ case "$1" in
       printf "Usage: workspace-menu create <workspace_name>\n" >&2
       exit 1
     fi
-    create_and_open_workspace "$2"
+    create_and_open_workspace_named "$2"
     ;;
   remove)
     if [ "$#" -ne 2 ]; then
@@ -179,6 +217,13 @@ case "$1" in
       exit 1
     fi
     remove_workspace "$2"
+    ;;
+  edit)
+    if [ "$#" -ne 2 ]; then
+      printf "Usage: workspace-menu edit <workspace_name>\n" >&2
+      exit 1
+    fi
+    edit_workspace "$2"
     ;;
   list)
     if [ "$#" -ne 1 ]; then
