@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WORKSPACES_ROOT="$HOME/Development/workspaces"
+
+print_help() {
+  cat <<'EOF'
+Usage:
+  workspace-remove <workspace_name>
+  workspace-remove
+
+Description:
+  Remove a workspace from ~/Development/workspaces safely.
+
+Modes:
+  - With <workspace_name>: removes the named workspace.
+  - Without arguments: opens fzf to select a workspace.
+
+Safety rules:
+  - No force mode.
+  - If any project has local changes (staged/modified/untracked), removal is blocked.
+  - Only local operations are performed.
+
+Options:
+  -h, --help   Show this help message.
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "Error: required command not found: %s\n" "$1" >&2
+    exit 1
+  fi
+}
+
+workspace_name=""
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  print_help
+  exit 0
+fi
+
+require_cmd git
+require_cmd find
+
+if [ ! -d "$WORKSPACES_ROOT" ]; then
+  printf "Error: workspaces root not found: %s\n" "$WORKSPACES_ROOT" >&2
+  exit 2
+fi
+
+if [ "$#" -gt 1 ]; then
+  printf "Error: too many arguments.\n\n" >&2
+  print_help
+  exit 1
+fi
+
+if [ "$#" -eq 1 ]; then
+  workspace_name="$1"
+else
+  require_cmd fzf
+  map_list=()
+  while IFS= read -r dir; do
+    map_list+=("$(basename "$dir")")
+  done < <(find "$WORKSPACES_ROOT" -mindepth 1 -maxdepth 1 -type d | sort)
+
+  if [ "${#map_list[@]}" -eq 0 ]; then
+    printf "No workspaces found in %s\n" "$WORKSPACES_ROOT"
+    exit 0
+  fi
+
+  selection=""
+  selection=$(printf "%s\n" "${map_list[@]}" | fzf --prompt="Select workspace > " --height=60% --header="ENTER confirm | ESC cancel") || true
+
+  if [ -z "$selection" ]; then
+    printf "Cancelled.\n"
+    exit 0
+  fi
+
+  workspace_name="$selection"
+fi
+
+workspace_path="$WORKSPACES_ROOT/$workspace_name"
+
+if [ ! -d "$workspace_path" ]; then
+  printf "Workspace not found: %s\n" "$workspace_path" >&2
+  exit 2
+fi
+
+worktree_dirs=()
+while IFS= read -r dir; do
+  if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    worktree_dirs+=("$dir")
+  fi
+done < <(find "$workspace_path" -mindepth 1 -maxdepth 1 -type d | sort)
+
+if [ "${#worktree_dirs[@]}" -eq 0 ]; then
+  printf "No git worktrees found in workspace: %s\n" "$workspace_path"
+  printf "Nothing to remove via git worktree.\n"
+  exit 0
+fi
+
+dirty_dirs=()
+for dir in "${worktree_dirs[@]}"; do
+  if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+    dirty_dirs+=("$dir")
+  fi
+done
+
+if [ "${#dirty_dirs[@]}" -gt 0 ]; then
+  printf "Removal blocked: local changes detected in %d project(s):\n" "${#dirty_dirs[@]}" >&2
+  for dir in "${dirty_dirs[@]}"; do
+    printf -- "- %s\n" "$dir" >&2
+  done
+  printf "\nPlease commit/stash/discard changes before removing this workspace.\n" >&2
+  exit 3
+fi
+
+printf "Workspace: %s\n" "$workspace_path"
+printf "Projects to remove: %d\n" "${#worktree_dirs[@]}"
+for dir in "${worktree_dirs[@]}"; do
+  printf -- "- %s\n" "$dir"
+done
+
+printf "\nConfirm workspace removal? [y/N]: "
+read -r confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+  printf "Cancelled.\n"
+  exit 0
+fi
+
+removed=0
+failed=0
+
+for dir in "${worktree_dirs[@]}"; do
+  if git -C "$dir" worktree remove "$dir"; then
+    printf "Removed: %s\n" "$dir"
+    removed=$((removed + 1))
+  else
+    printf "Failed: %s\n" "$dir" >&2
+    failed=$((failed + 1))
+  fi
+done
+
+if [ "$failed" -eq 0 ]; then
+  if rmdir "$workspace_path" 2>/dev/null; then
+    root_status="removed"
+  else
+    root_status="kept (not empty)"
+  fi
+else
+  root_status="kept (removal failures)"
+fi
+
+printf "\nDone.\n"
+printf "Workspace: %s\n" "$workspace_path"
+printf "Removed: %d\n" "$removed"
+printf "Failed:  %d\n" "$failed"
+printf "Root dir: %s\n" "$root_status"
+
+if [ "$failed" -gt 0 ]; then
+  exit 4
+fi

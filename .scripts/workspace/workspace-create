@@ -1,0 +1,388 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WORKSPACES_ROOT="$HOME/Development/workspaces"
+SEARCH_ROOTS=(
+  "$HOME/Development/projects"
+  "$HOME/Work/Development"
+)
+
+print_help() {
+  cat <<'EOF'
+Usage:
+  workspace-create
+  workspace-create <workspace_name>
+  workspace-create [<workspace_name>] --base <branch>
+
+Description:
+  Create a workspace in ~/Development/workspaces and add selected projects
+  as git worktrees from:
+    - ~/Development/projects
+    - ~/Work/Development
+
+Options:
+  --base <branch>  Use the same base branch for all selected projects.
+  -h, --help   Show this help message.
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "Error: required command not found: %s\n" "$1" >&2
+    exit 1
+  fi
+}
+
+sanitize_branch_name() {
+  local input="$1"
+  local out
+  out=$(printf "%s" "$input" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._/-' '-')
+  out=${out#-}
+  out=${out%-}
+  out=${out//--/-}
+  printf "%s" "$out"
+}
+
+detect_base_branch() {
+  local repo="$1"
+  if git -C "$repo" show-ref --verify --quiet refs/heads/main || git -C "$repo" ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+    printf "main"
+    return
+  fi
+
+  if git -C "$repo" show-ref --verify --quiet refs/heads/master || git -C "$repo" ls-remote --exit-code --heads origin master >/dev/null 2>&1; then
+    printf "master"
+    return
+  fi
+
+  printf ""
+}
+
+branch_exists() {
+  local repo="$1"
+  local branch="$2"
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"
+}
+
+base_branch_exists() {
+  local repo="$1"
+  local branch="$2"
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch" || \
+    git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+}
+
+workspace_exists_prompt() {
+  local target="$1"
+
+  while true; do
+    printf "Workspace already exists: %s\n" "$target"
+    printf "Choose: [r]euse, [n]ew name, [c]ancel: "
+    read -r choice
+    case "$choice" in
+      r|R)
+        return 0
+        ;;
+      n|N)
+        return 2
+        ;;
+      c|C|"")
+        return 1
+        ;;
+      *)
+        printf "Invalid option. Use r, n, or c.\n"
+        ;;
+    esac
+  done
+}
+
+require_cmd git
+require_cmd fzf
+require_cmd find
+
+workspace_name=""
+base_override=""
+workspace_name_from_arg=0
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    --base)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        printf "Error: --base requires a branch name.\n\n" >&2
+        print_help
+        exit 1
+      fi
+      base_override="$2"
+      shift 2
+      ;;
+    --base=*)
+      base_override="${1#--base=}"
+      if [ -z "$base_override" ]; then
+        printf "Error: --base requires a branch name.\n\n" >&2
+        print_help
+        exit 1
+      fi
+      shift
+      ;;
+    -*)
+      printf "Error: unknown option '%s'.\n\n" "$1" >&2
+      print_help
+      exit 1
+      ;;
+    *)
+      if [ -n "$workspace_name" ]; then
+        printf "Error: too many positional arguments.\n\n" >&2
+        print_help
+        exit 1
+      fi
+      workspace_name="$1"
+      workspace_name_from_arg=1
+      shift
+      ;;
+  esac
+done
+
+for root in "${SEARCH_ROOTS[@]}"; do
+  if [ ! -d "$root" ]; then
+    printf "Error: search root not found: %s\n" "$root" >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$WORKSPACES_ROOT"
+
+while [ -z "$workspace_name" ]; do
+  printf "Workspace name: "
+  read -r workspace_name
+  workspace_name=$(printf "%s" "$workspace_name" | tr -d '[:space:]')
+  if [ -z "$workspace_name" ]; then
+    printf "Workspace name cannot be empty.\n"
+  fi
+done
+
+workspace_name=$(sanitize_branch_name "$workspace_name")
+if [ -z "$workspace_name" ]; then
+  printf "Error: invalid workspace name after sanitization.\n" >&2
+  exit 1
+fi
+
+workspace_path="$WORKSPACES_ROOT/$workspace_name"
+
+if [ -d "$workspace_path" ]; then
+  if workspace_exists_prompt "$workspace_path"; then
+    :
+  else
+    status=$?
+    if [ "$status" -eq 2 ]; then
+      if [ -n "$base_override" ]; then
+        exec "$0" --base "$base_override"
+      fi
+      exec "$0"
+    fi
+    printf "Cancelled.\n"
+    exit 0
+  fi
+fi
+
+repo_entries=()
+for root in "${SEARCH_ROOTS[@]}"; do
+  while IFS= read -r git_dir; do
+    repo_dir=${git_dir%/.git}
+    repo_name=$(basename "$repo_dir")
+    repo_entries+=("$repo_name | $repo_dir")
+  done < <(find "$root" -mindepth 1 -maxdepth 4 -type d -name .git)
+done
+
+if [ "${#repo_entries[@]}" -eq 0 ]; then
+  printf "No git repositories found in configured roots.\n" >&2
+  exit 1
+fi
+
+selected_lines=()
+while IFS= read -r line; do
+  selected_lines+=("$line")
+done < <(
+  printf "%s\n" "${repo_entries[@]}" | sort -u | \
+    fzf --multi --prompt="Select projects > " --header="TAB mark | ENTER confirm" --height=70%
+)
+
+if [ "${#selected_lines[@]}" -eq 0 ]; then
+  printf "No projects selected.\n"
+  exit 0
+fi
+
+mkdir -p "$workspace_path"
+
+repos=()
+repo_names=()
+bases=()
+work_branches=()
+actions=()
+destinations=()
+
+for line in "${selected_lines[@]}"; do
+  repo_path=${line#* | }
+  repo_name=$(basename "$repo_path")
+  destination="$workspace_path/$repo_name"
+
+  if [ -n "$base_override" ]; then
+    base_branch="$base_override"
+  else
+    base_branch=$(detect_base_branch "$repo_path")
+  fi
+
+  if [ -z "$base_override" ] && [ "$workspace_name_from_arg" -eq 0 ]; then
+    while true; do
+      if [ -n "$base_branch" ]; then
+        printf "Base branch for '%s' [%s] (Enter to keep, '-' to skip): " "$repo_name" "$base_branch"
+      else
+        printf "Base branch for '%s' [none] (type branch or '-' to skip): " "$repo_name"
+      fi
+
+      read -r chosen_base
+
+      if [ -z "$chosen_base" ] && [ -n "$base_branch" ]; then
+        chosen_base="$base_branch"
+      fi
+
+      if [ "$chosen_base" = "-" ]; then
+        base_branch=""
+        break
+      fi
+
+      if [ -z "$chosen_base" ]; then
+        printf "Please provide a branch or use '-'.\n"
+        continue
+      fi
+
+      if base_branch_exists "$repo_path" "$chosen_base"; then
+        base_branch="$chosen_base"
+        break
+      fi
+
+      printf "Branch '%s' not found for '%s'.\n" "$chosen_base" "$repo_name"
+    done
+  fi
+
+  if [ -z "$base_branch" ]; then
+    if [ -z "$base_override" ] && [ "$workspace_name_from_arg" -eq 0 ]; then
+      repos+=("$repo_path")
+      repo_names+=("$repo_name")
+      bases+=("-")
+      work_branches+=("-")
+      actions+=("skip-no-base")
+      destinations+=("$destination")
+      continue
+    fi
+
+    printf "Repo '%s' has no main/master. Enter base branch (or leave blank to skip): " "$repo_name"
+    read -r base_branch
+    if [ -z "$base_branch" ]; then
+      repos+=("$repo_path")
+      repo_names+=("$repo_name")
+      bases+=("-")
+      work_branches+=("-")
+      actions+=("skip-no-base")
+      destinations+=("$destination")
+      continue
+    fi
+  fi
+
+  if ! base_branch_exists "$repo_path" "$base_branch"; then
+    repos+=("$repo_path")
+    repo_names+=("$repo_name")
+    bases+=("$base_branch")
+    work_branches+=("-")
+    actions+=("skip-no-base")
+    destinations+=("$destination")
+    continue
+  fi
+
+  work_branch="$workspace_name"
+
+  if [ -e "$destination" ]; then
+    action="skip-dest-exists"
+  elif branch_exists "$repo_path" "$work_branch"; then
+    action="reuse-branch"
+  else
+    action="create-branch"
+  fi
+
+  repos+=("$repo_path")
+  repo_names+=("$repo_name")
+  bases+=("$base_branch")
+  work_branches+=("$work_branch")
+  actions+=("$action")
+  destinations+=("$destination")
+done
+
+printf "\nExecution plan:\n"
+printf "%-24s %-10s %-22s %-18s %s\n" "PROJECT" "BASE" "WORK_BRANCH" "ACTION" "DESTINATION"
+printf "%-24s %-10s %-22s %-18s %s\n" "-------" "----" "-----------" "------" "-----------"
+
+for i in "${!repos[@]}"; do
+  printf "%-24s %-10s %-22s %-18s %s\n" \
+    "${repo_names[$i]}" "${bases[$i]}" "${work_branches[$i]}" "${actions[$i]}" "${destinations[$i]}"
+done
+
+printf "\nConfirm workspace creation? [y/N]: "
+read -r confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+  printf "Cancelled.\n"
+  exit 0
+fi
+
+created=0
+skipped=0
+failed=0
+
+for i in "${!repos[@]}"; do
+  repo_path="${repos[$i]}"
+  repo_name="${repo_names[$i]}"
+  base_branch="${bases[$i]}"
+  work_branch="${work_branches[$i]}"
+  action="${actions[$i]}"
+  destination="${destinations[$i]}"
+
+  case "$action" in
+    skip-no-base|skip-dest-exists)
+      printf "Skipping %s (%s).\n" "$repo_name" "$action"
+      skipped=$((skipped + 1))
+      continue
+      ;;
+    reuse-branch)
+      if git -C "$repo_path" worktree add "$destination" "$work_branch"; then
+        printf "Created %s using existing branch '%s'.\n" "$repo_name" "$work_branch"
+        created=$((created + 1))
+      else
+        printf "Failed creating %s with existing branch '%s'.\n" "$repo_name" "$work_branch" >&2
+        failed=$((failed + 1))
+      fi
+      ;;
+    create-branch)
+      if git -C "$repo_path" worktree add -b "$work_branch" "$destination" "$base_branch"; then
+        printf "Created %s from %s with new branch '%s'.\n" "$repo_name" "$base_branch" "$work_branch"
+        created=$((created + 1))
+      else
+        printf "Failed creating %s from %s.\n" "$repo_name" "$base_branch" >&2
+        failed=$((failed + 1))
+      fi
+      ;;
+    *)
+      printf "Skipping %s (unknown action %s).\n" "$repo_name" "$action"
+      skipped=$((skipped + 1))
+      ;;
+  esac
+done
+
+printf "\nDone.\n"
+printf "Workspace: %s\n" "$workspace_path"
+printf "Created: %d\n" "$created"
+printf "Skipped: %d\n" "$skipped"
+printf "Failed:  %d\n" "$failed"
+printf "\nOpen with:\n"
+printf "opencode %s\n" "$workspace_path"

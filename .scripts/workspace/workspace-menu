@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WORKSPACES_ROOT="$HOME/Development/workspaces"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORKSPACE_CREATE_CMD="$SCRIPT_DIR/workspace-create"
+WORKSPACE_REMOVE_CMD="$SCRIPT_DIR/workspace-remove"
+
+print_help() {
+  cat <<'EOF'
+Usage:
+  workspace-menu
+  workspace-menu open <workspace_name>
+  workspace-menu create <workspace_name>
+  workspace-menu remove <workspace_name>
+  workspace-menu list
+
+Description:
+  Manage development workspaces with an interactive menu or direct commands.
+
+Behavior:
+  - open/create: opens target in tmux-sessionizer and exits.
+  - remove: calls workspace-remove.
+
+Options:
+  -h, --help   Show this help message.
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "Error: required command not found: %s\n" "$1" >&2
+    exit 1
+  fi
+}
+
+workspace_path_from_name() {
+  local name="$1"
+  printf "%s/%s" "$WORKSPACES_ROOT" "$name"
+}
+
+ensure_workspace_exists() {
+  local name="$1"
+  local path
+  path=$(workspace_path_from_name "$name")
+  if [ ! -d "$path" ]; then
+    printf "Workspace not found: %s\n" "$path" >&2
+    exit 2
+  fi
+}
+
+list_workspaces() {
+  if [ ! -d "$WORKSPACES_ROOT" ]; then
+    return
+  fi
+
+  find "$WORKSPACES_ROOT" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort
+}
+
+open_workspace() {
+  local name="$1"
+  local path
+  path=$(workspace_path_from_name "$name")
+  ensure_workspace_exists "$name"
+  tmux-sessionizer "$path"
+}
+
+create_and_open_workspace() {
+  local before_list
+  local after_list
+  local created_list
+  local created_count
+  local selected
+
+  before_list=$(list_workspaces || true)
+  "$WORKSPACE_CREATE_CMD"
+  after_list=$(list_workspaces || true)
+
+  created_list=$(comm -13 <(printf "%s\n" "$before_list" | sed '/^$/d' | sort) <(printf "%s\n" "$after_list" | sed '/^$/d' | sort))
+  created_count=$(printf "%s\n" "$created_list" | sed '/^$/d' | wc -l | tr -d ' ')
+
+  if [ "$created_count" -eq 1 ]; then
+    selected=$(printf "%s\n" "$created_list" | sed '/^$/d')
+  else
+    require_cmd fzf
+    selected=$(select_workspace_name)
+  fi
+
+  if [ -z "$selected" ]; then
+    printf "Cancelled.\n"
+    exit 0
+  fi
+
+  open_workspace "$selected"
+}
+
+remove_workspace() {
+  local name="$1"
+  "$WORKSPACE_REMOVE_CMD" "$name"
+}
+
+select_workspace_name() {
+  local selection
+  selection=$(list_workspaces | fzf --prompt="Select workspace > " --height=60% --header="ENTER confirm | ESC cancel") || true
+  printf "%s" "$selection"
+}
+
+interactive_menu() {
+  local action
+  action=$(printf "%s\n" "open" "create" "remove" "exit" | fzf --prompt="Workspace action > " --height=40% --header="ENTER confirm | ESC cancel") || true
+
+  if [ -z "$action" ] || [ "$action" = "exit" ]; then
+    exit 0
+  fi
+
+  if [ "$action" = "open" ]; then
+    local selected
+    selected=$(select_workspace_name)
+    if [ -z "$selected" ]; then
+      printf "Cancelled.\n"
+      exit 0
+    fi
+    open_workspace "$selected"
+    exit 0
+  fi
+
+  if [ "$action" = "create" ]; then
+    create_and_open_workspace
+    exit 0
+  fi
+
+  if [ "$action" = "remove" ]; then
+    local selected
+    selected=$(select_workspace_name)
+    if [ -z "$selected" ]; then
+      printf "Cancelled.\n"
+      exit 0
+    fi
+    remove_workspace "$selected"
+    exit 0
+  fi
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  print_help
+  exit 0
+fi
+
+require_cmd git
+require_cmd "$WORKSPACE_CREATE_CMD"
+require_cmd "$WORKSPACE_REMOVE_CMD"
+require_cmd tmux-sessionizer
+
+if [ "$#" -eq 0 ]; then
+  require_cmd fzf
+  interactive_menu
+  exit 0
+fi
+
+case "$1" in
+  open)
+    if [ "$#" -ne 2 ]; then
+      printf "Usage: workspace-menu open <workspace_name>\n" >&2
+      exit 1
+    fi
+    open_workspace "$2"
+    ;;
+  create)
+    if [ "$#" -ne 2 ]; then
+      printf "Usage: workspace-menu create <workspace_name>\n" >&2
+      exit 1
+    fi
+    create_and_open_workspace "$2"
+    ;;
+  remove)
+    if [ "$#" -ne 2 ]; then
+      printf "Usage: workspace-menu remove <workspace_name>\n" >&2
+      exit 1
+    fi
+    remove_workspace "$2"
+    ;;
+  list)
+    if [ "$#" -ne 1 ]; then
+      printf "Usage: workspace-menu list\n" >&2
+      exit 1
+    fi
+    list_workspaces
+    ;;
+  *)
+    printf "Error: unknown command '%s'.\n\n" "$1" >&2
+    print_help
+    exit 1
+    ;;
+esac
