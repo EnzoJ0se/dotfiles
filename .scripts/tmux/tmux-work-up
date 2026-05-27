@@ -37,6 +37,12 @@ fi
 session_file=$(mktemp)
 trap 'rm -f "$session_file"' EXIT
 
+if ! tmux has-session -t Notes 2>/dev/null; then
+  tmux new-session -d -s Notes -c "$NOTES_DIR"
+  tmux send-keys -t Notes "$CLEAR_CMD" C-m
+  tmux send-keys -t Notes "$EDITOR_CMD" C-m
+fi
+
 "$TMUX_SETUP_ENV_CMD" --no-attach --session-file "$session_file"
 
 workspace_session=""
@@ -47,12 +53,6 @@ fi
 if [ -z "$workspace_session" ]; then
   printf "Cancelled.\n"
   exit 0
-fi
-
-if ! tmux has-session -t Notes 2>/dev/null; then
-  tmux new-session -d -s Notes -c "$NOTES_DIR"
-  tmux send-keys -t Notes "$CLEAR_CMD" C-m
-  tmux send-keys -t Notes "$EDITOR_CMD" C-m
 fi
 
 if [ -n "${TMUX:-}" ]; then
