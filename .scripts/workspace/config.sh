@@ -1,0 +1,5 @@
+WS_WORKSPACES_ROOT="$HOME/Development/workspaces"
+WS_SEARCH_ROOTS="$HOME/Development/projects:$HOME/Work/Development"
+WS_NOTES_DIR="$HOME/Work/Notes"
+WS_EDITOR="nvim"
+WS_CLEAR_CMD="clear"
