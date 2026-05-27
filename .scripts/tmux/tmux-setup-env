@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
+fi
+
+WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
+EDITOR_CMD="${WS_EDITOR:-nvim}"
+CLEAR_CMD="${WS_CLEAR_CMD:-clear}"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORKSPACE_CREATE_CMD="$SCRIPT_DIR/../workspace/workspace-create"
+
+workspace_path=""
+session_name=""
+skip_attach=0
+print_session=0
+session_file=""
+
+print_help() {
+  cat <<'EOF'
+Usage:
+  tmux-setup-env
+  tmux-setup-env --workspace <path> [--session <name>] [--no-attach] [--print-session] [--session-file <path>]
+
+Description:
+  Setup a tmux session for a development workspace.
+
+Options:
+  --workspace <path>  Workspace path to setup.
+  --session <name>    Session name override.
+  -n, --no-attach     Do not attach/switch after setup.
+  --print-session     Print session name after setup.
+  --session-file      Write session name to file after setup.
+  -h, --help          Show this help message.
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "Error: required command not found: %s\n" "$1" >&2
+    exit 1
+  fi
+}
+
+sanitize_name() {
+  local input="$1"
+  local out
+  out=$(printf "%s" "$input" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '_')
+  out=${out#_}
+  out=${out%_}
+  printf "%s" "$out"
+}
+
+list_workspaces() {
+  if [ ! -d "$WORKSPACES_ROOT" ]; then
+    return
+  fi
+  find "$WORKSPACES_ROOT" -mindepth 1 -maxdepth 1 -type d | sort
+}
+
+select_workspace() {
+  local selected
+  selected=$(list_workspaces | fzf --prompt="Select workspace > " --height=60% --header="ENTER confirm | ESC cancel") || true
+  printf "%s" "$selected"
+}
+
+select_or_create_workspace() {
+  local action before_list after_list created_list created_count selected
+
+  action=$(printf "%s\n" "select" "create" "exit" | fzf --prompt="Workspace action > " --height=40% --header="ENTER confirm | ESC cancel") || true
+  case "$action" in
+    select)
+      selected=$(select_workspace)
+      if [ -z "$selected" ]; then
+        printf "Cancelled.\n"
+        exit 0
+      fi
+      workspace_path="$selected"
+      ;;
+    create)
+      before_list=$(list_workspaces || true)
+      "$WORKSPACE_CREATE_CMD"
+      after_list=$(list_workspaces || true)
+      created_list=$(comm -13 <(printf "%s\n" "$before_list" | sed '/^$/d' | sort) <(printf "%s\n" "$after_list" | sed '/^$/d' | sort))
+      created_count=$(printf "%s\n" "$created_list" | sed '/^$/d' | wc -l | tr -d ' ')
+
+      if [ "$created_count" -eq 1 ]; then
+        workspace_path=$(printf "%s\n" "$created_list" | sed '/^$/d')
+      else
+        selected=$(select_workspace)
+        if [ -z "$selected" ]; then
+          printf "Cancelled.\n"
+          exit 0
+        fi
+        workspace_path="$selected"
+      fi
+      ;;
+    *)
+      exit 0
+      ;;
+  esac
+}
+
+window_exists() {
+  local sess="$1"
+  local win="$2"
+  tmux list-windows -t "$sess" -F '#W' | grep -Fx "$win" >/dev/null 2>&1
+}
+
+workspace_window_is_healthy() {
+  local sess="$1"
+  local line
+  local pane_dead
+  local pane_cmd
+
+  if ! window_exists "$sess" "workspace"; then
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    pane_dead=${line%% *}
+    pane_cmd=${line#* }
+    if [ "$pane_dead" = "1" ]; then
+      return 1
+    fi
+    if [ -z "$pane_cmd" ]; then
+      return 1
+    fi
+  done < <(tmux list-panes -t "$sess":workspace -F '#{pane_dead} #{pane_current_command}')
+
+  return 0
+}
+
+ensure_workspace_window() {
+  local sess="$1"
+  local path="$2"
+  local shell_cmd
+
+  shell_cmd="${SHELL:-/bin/bash}"
+
+  if ! window_exists "$sess" "workspace"; then
+    tmux new-window -t "$sess" -n "workspace" -c "$path" "$shell_cmd"
+    return
+  fi
+
+  if ! workspace_window_is_healthy "$sess"; then
+    tmux kill-window -t "$sess":workspace
+    tmux new-window -t "$sess" -n "workspace" -c "$path" "$shell_cmd"
+  fi
+}
+
+setup_project_window() {
+  local sess="$1"
+  local win="$2"
+  local dir="$3"
+
+  if window_exists "$sess" "$win"; then
+    return
+  fi
+
+  tmux new-window -t "$sess" -n "$win" -c "$dir"
+  tmux send-keys -t "$sess":"$win" "$CLEAR_CMD" C-m
+  tmux send-keys -t "$sess":"$win" "$EDITOR_CMD" C-m
+  tmux split-window -v -p 33 -t "$sess":"$win" -c "$dir"
+  tmux send-keys -t "$sess":"$win".2 "$CLEAR_CMD" C-m
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --workspace)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        printf "Error: --workspace requires a path.\n" >&2
+        exit 1
+      fi
+      workspace_path="$2"
+      shift 2
+      ;;
+    --session)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        printf "Error: --session requires a name.\n" >&2
+        exit 1
+      fi
+      session_name="$2"
+      shift 2
+      ;;
+    -n|--no-attach)
+      skip_attach=1
+      shift
+      ;;
+    --print-session)
+      print_session=1
+      shift
+      ;;
+    --session-file)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        printf "Error: --session-file requires a path.\n" >&2
+        exit 1
+      fi
+      session_file="$2"
+      shift 2
+      ;;
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    *)
+      printf "Error: unknown option '%s'.\n\n" "$1" >&2
+      print_help
+      exit 1
+      ;;
+  esac
+done
+
+require_cmd tmux
+require_cmd git
+require_cmd fzf
+require_cmd "$WORKSPACE_CREATE_CMD"
+require_cmd find
+require_cmd comm
+require_cmd sed
+require_cmd wc
+
+if ! command -v "$CLEAR_CMD" >/dev/null 2>&1; then
+  CLEAR_CMD="clear"
+fi
+
+require_cmd "$EDITOR_CMD"
+require_cmd "$CLEAR_CMD"
+
+if [ -z "$workspace_path" ]; then
+  select_or_create_workspace
+fi
+
+if [ ! -d "$workspace_path" ]; then
+  printf "Error: workspace not found: %s\n" "$workspace_path" >&2
+  exit 1
+fi
+
+if [ -z "$session_name" ]; then
+  session_name=$(sanitize_name "$(basename "$workspace_path")")
+fi
+
+if [ -z "$session_name" ]; then
+  printf "Error: invalid session name.\n" >&2
+  exit 1
+fi
+
+if ! tmux has-session -t "$session_name" 2>/dev/null; then
+  tmux new-session -d -s "$session_name" -n "workspace" -c "$workspace_path" "${SHELL:-/bin/bash}"
+fi
+
+ensure_workspace_window "$session_name" "$workspace_path"
+
+project_dirs=()
+session_notes_dir=""
+while IFS= read -r dir; do
+  if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ "$(basename "$dir")" = "session-notes" ]; then
+      session_notes_dir="$dir"
+    else
+      project_dirs+=("$dir")
+    fi
+  fi
+done < <(find "$workspace_path" -mindepth 1 -maxdepth 1 -type d)
+
+if [ -n "$session_notes_dir" ]; then
+  window_name=$(sanitize_name "$(basename "$session_notes_dir")")
+  if [ -n "$window_name" ] && [ "$window_name" != "workspace" ]; then
+    setup_project_window "$session_name" "$window_name" "$session_notes_dir"
+  fi
+fi
+
+for dir in "${project_dirs[@]}"; do
+  window_name=$(sanitize_name "$(basename "$dir")")
+  if [ -z "$window_name" ] || [ "$window_name" = "workspace" ]; then
+    continue
+  fi
+  setup_project_window "$session_name" "$window_name" "$dir"
+done
+
+tmux select-window -t "$session_name":workspace
+
+if [ "$print_session" -eq 1 ]; then
+  printf "%s\n" "$session_name"
+fi
+
+if [ -n "$session_file" ]; then
+  printf "%s\n" "$session_name" > "$session_file"
+fi
+
+if [ "$skip_attach" -eq 0 ]; then
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$session_name"
+  else
+    tmux attach -t "$session_name"
+  fi
+fi
