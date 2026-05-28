@@ -176,7 +176,6 @@ run_bootstrap_window() {
   local sess="$1"
   local workspace="$2"
   local bootstrap_window="bootstrap"
-  local bootstrap_cmd
 
   if window_exists "$sess" "$bootstrap_window"; then
     tmux kill-window -t "$sess":"$bootstrap_window"
@@ -184,8 +183,7 @@ run_bootstrap_window() {
 
   tmux new-window -t "$sess" -n "$bootstrap_window" -c "$workspace"
 
-  bootstrap_cmd="\"$WORKSPACE_BOOTSTRAP_CMD\" \"$workspace\"; status=\$?; if [ \$status -eq 0 ]; then tmux kill-window -t \"$sess:$bootstrap_window\"; else printf '\\nBootstrap failed (exit %s). Press ENTER to keep this window.\\n' \"\$status\"; read -r _; fi"
-  tmux send-keys -t "$sess":"$bootstrap_window" "$bootstrap_cmd" C-m
+  tmux send-keys -t "$sess":"$bootstrap_window" "\"$WORKSPACE_BOOTSTRAP_CMD\" \"$workspace\"" C-m
 }
 
 while [ "$#" -gt 0 ]; do
