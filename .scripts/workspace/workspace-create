@@ -50,13 +50,13 @@ sanitize_branch_name() {
 
 detect_base_branch() {
   local repo="$1"
-  if git -C "$repo" show-ref --verify --quiet refs/heads/main || git -C "$repo" ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
-    printf "main"
+  if git -C "$repo" show-ref --verify --quiet refs/heads/master || git -C "$repo" ls-remote --exit-code --heads origin master >/dev/null 2>&1; then
+    printf "master"
     return
   fi
 
-  if git -C "$repo" show-ref --verify --quiet refs/heads/master || git -C "$repo" ls-remote --exit-code --heads origin master >/dev/null 2>&1; then
-    printf "master"
+  if git -C "$repo" show-ref --verify --quiet refs/heads/main || git -C "$repo" ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+    printf "main"
     return
   fi
 

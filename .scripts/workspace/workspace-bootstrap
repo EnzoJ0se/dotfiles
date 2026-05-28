@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WS_CONFIG_FILE="${WS_CONFIG_FILE:-$HOME/.scripts/workspace/config.sh}"
+if [ -f "$WS_CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$WS_CONFIG_FILE"
+fi
+
+WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
+
+workspace_input=""
+workspace_name=""
+workspace_path=""
+dry_run=0
+only_projects=()
+
+print_help() {
+  cat <<'EOF'
+Usage:
+  workspace-bootstrap
+  workspace-bootstrap <workspace_name|workspace_path>
+  workspace-bootstrap [<workspace_name|workspace_path>] --only <project_name>
+
+Description:
+  Bootstrap projects inside a workspace.
+
+Rules:
+  - Copy only if source exists and destination does not exist.
+  - .env
+  - src/environments/environment.ts
+  - .phpactor.json
+  - .cursor/
+  - .claude/
+  - .agents/
+  - package.json and not Laravel: npm i
+  - composer.json: composer install
+  - Laravel (artisan + composer.json): php artisan config:cache
+
+Options:
+  --only <project_name>  Bootstrap only the named project (repeatable).
+  --dry-run              Show planned actions without executing.
+  -h, --help             Show this help message.
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "Error: required command not found: %s\n" "$1" >&2
+    exit 1
+  fi
+}
+
+select_workspace_name() {
+  local selected
+  selected=$(find "$WORKSPACES_ROOT" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | \
+    fzf --prompt="Select workspace > " --height=60% --header="ENTER confirm | ESC cancel") || true
+  printf "%s" "$selected"
+}
+
+run_or_print() {
+  if [ "$dry_run" -eq 1 ]; then
+    printf "[dry-run] %s\n" "$*"
+    return 0
+  fi
+  "$@"
+}
+
+contains_only_project() {
+  local name="$1"
+  if [ "${#only_projects[@]}" -eq 0 ]; then
+    return 0
+  fi
+  local item
+  for item in "${only_projects[@]}"; do
+    if [ "$item" = "$name" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+copy_if_missing_file() {
+  local source="$1"
+  local target="$2"
+  local label="$3"
+
+  if [ ! -f "$source" ]; then
+    return
+  fi
+  if [ -e "$target" ]; then
+    printf "skip-%s (exists): %s\n" "$label" "$target"
+    return
+  fi
+
+  run_or_print mkdir -p "$(dirname "$target")"
+  run_or_print cp "$source" "$target"
+  printf "copied-%s: %s\n" "$label" "$target"
+  copied_count=$((copied_count + 1))
+}
+
+copy_if_missing_dir() {
+  local source="$1"
+  local target="$2"
+  local label="$3"
+
+  if [ ! -d "$source" ]; then
+    return
+  fi
+  if [ -e "$target" ]; then
+    printf "skip-%s (exists): %s\n" "$label" "$target"
+    return
+  fi
+
+  run_or_print cp -R "$source" "$target"
+  printf "copied-%s: %s\n" "$label" "$target"
+  copied_count=$((copied_count + 1))
+}
+
+run_project_command() {
+  local project_dir="$1"
+  local description="$2"
+  shift 2
+
+  if [ "$dry_run" -eq 1 ]; then
+    printf "[dry-run] (%s) %s\n" "$project_dir" "$description"
+    return 0
+  fi
+
+  if "$@"; then
+    printf "%s\n" "$description"
+    return 0
+  fi
+
+  printf "failed: %s\n" "$description" >&2
+  failed_count=$((failed_count + 1))
+  return 1
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    --only)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        printf "Error: --only requires a project name.\n" >&2
+        exit 1
+      fi
+      only_projects+=("$2")
+      shift 2
+      ;;
+    --only=*)
+      only_value="${1#--only=}"
+      if [ -z "$only_value" ]; then
+        printf "Error: --only requires a project name.\n" >&2
+        exit 1
+      fi
+      only_projects+=("$only_value")
+      shift
+      ;;
+    -*)
+      printf "Error: unknown option '%s'.\n\n" "$1" >&2
+      print_help
+      exit 1
+      ;;
+    *)
+      if [ -n "$workspace_input" ]; then
+        printf "Error: too many positional arguments.\n\n" >&2
+        print_help
+        exit 1
+      fi
+      workspace_input="$1"
+      shift
+      ;;
+  esac
+done
+
+require_cmd git
+require_cmd find
+require_cmd cp
+
+if [ ! -d "$WORKSPACES_ROOT" ]; then
+  printf "Error: workspaces root not found: %s\n" "$WORKSPACES_ROOT" >&2
+  exit 1
+fi
+
+if [ -z "$workspace_input" ]; then
+  require_cmd fzf
+  workspace_name=$(select_workspace_name)
+  if [ -z "$workspace_name" ]; then
+    printf "Cancelled.\n"
+    exit 0
+  fi
+  workspace_path="$WORKSPACES_ROOT/$workspace_name"
+else
+  if [ -d "$workspace_input" ]; then
+    workspace_path="$workspace_input"
+    workspace_name=$(basename "$workspace_path")
+  else
+    workspace_name="$workspace_input"
+    workspace_path="$WORKSPACES_ROOT/$workspace_name"
+  fi
+fi
+
+if [ ! -d "$workspace_path" ]; then
+  printf "Error: workspace not found: %s\n" "$workspace_path" >&2
+  exit 1
+fi
+
+project_dirs=()
+while IFS= read -r dir; do
+  if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    project_name=$(basename "$dir")
+    if contains_only_project "$project_name"; then
+      project_dirs+=("$dir")
+    fi
+  fi
+done < <(find "$workspace_path" -mindepth 1 -maxdepth 1 -type d | sort)
+
+if [ "${#project_dirs[@]}" -eq 0 ]; then
+  printf "No matching git projects found in workspace: %s\n" "$workspace_path"
+  exit 0
+fi
+
+copied_count=0
+npm_count=0
+composer_count=0
+cache_count=0
+failed_count=0
+
+for project_dir in "${project_dirs[@]}"; do
+  project_name=$(basename "$project_dir")
+  printf "\nProject: %s\n" "$project_name"
+
+  common_dir=$(git -C "$project_dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  if [ -z "$common_dir" ]; then
+    printf "failed: cannot resolve git-common-dir for %s\n" "$project_dir" >&2
+    failed_count=$((failed_count + 1))
+    continue
+  fi
+
+  base_project_dir=$(dirname "$common_dir")
+  if [ ! -d "$base_project_dir" ]; then
+    printf "failed: base project not found for %s\n" "$project_dir" >&2
+    failed_count=$((failed_count + 1))
+    continue
+  fi
+
+  copy_if_missing_file "$base_project_dir/.env" "$project_dir/.env" "env"
+  copy_if_missing_file "$base_project_dir/src/environments/environment.ts" "$project_dir/src/environments/environment.ts" "environment-ts"
+  copy_if_missing_file "$base_project_dir/.phpactor.json" "$project_dir/.phpactor.json" "phpactor"
+  copy_if_missing_dir "$base_project_dir/.cursor" "$project_dir/.cursor" "cursor-dir"
+  copy_if_missing_dir "$base_project_dir/.claude" "$project_dir/.claude" "claude-dir"
+  copy_if_missing_dir "$base_project_dir/.agents" "$project_dir/.agents" "agents-dir"
+
+  is_laravel=0
+  if [ -f "$project_dir/artisan" ] && [ -f "$project_dir/composer.json" ]; then
+    is_laravel=1
+  fi
+
+  if [ -f "$project_dir/package.json" ] && [ "$is_laravel" -eq 0 ]; then
+    if command -v npm >/dev/null 2>&1; then
+      run_project_command "$project_dir" "npm-installed" bash -lc "cd \"$project_dir\" && npm i" && npm_count=$((npm_count + 1))
+    else
+      printf "failed: npm not found for %s\n" "$project_name" >&2
+      failed_count=$((failed_count + 1))
+    fi
+  fi
+
+  if [ -f "$project_dir/composer.json" ]; then
+    if command -v composer >/dev/null 2>&1; then
+      run_project_command "$project_dir" "composer-installed" bash -lc "cd \"$project_dir\" && composer install" && composer_count=$((composer_count + 1))
+    else
+      printf "failed: composer not found for %s\n" "$project_name" >&2
+      failed_count=$((failed_count + 1))
+    fi
+  fi
+
+  if [ "$is_laravel" -eq 1 ]; then
+    if command -v php >/dev/null 2>&1; then
+      run_project_command "$project_dir" "laravel-config-cached" bash -lc "cd \"$project_dir\" && php artisan config:cache" && cache_count=$((cache_count + 1))
+    else
+      printf "failed: php not found for %s\n" "$project_name" >&2
+      failed_count=$((failed_count + 1))
+    fi
+  fi
+done
+
+printf "\nDone.\n"
+printf "Workspace: %s\n" "$workspace_path"
+printf "Copied items: %d\n" "$copied_count"
+printf "npm installs: %d\n" "$npm_count"
+printf "composer installs: %d\n" "$composer_count"
+printf "Laravel config cache: %d\n" "$cache_count"
+printf "Failures: %d\n" "$failed_count"
+
+if [ "$failed_count" -gt 0 ]; then
+  exit 1
+fi

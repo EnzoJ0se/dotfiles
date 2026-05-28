@@ -217,6 +217,7 @@ add_projects() {
   done
 
   printf "\nAdd complete. Created: %d | Skipped: %d | Failed: %d\n" "$created" "$skipped" "$failed"
+
 }
 
 remove_projects() {
@@ -304,16 +305,30 @@ remove_projects() {
   printf "\nRemove complete. Removed: %d | Blocked: %d | Failed: %d\n" "$removed" "$blocked" "$failed"
 }
 
-if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  print_help
-  exit 0
-fi
+workspace_name=""
 
-if [ "$#" -gt 1 ]; then
-  printf "Error: too many arguments.\n\n" >&2
-  print_help
-  exit 1
-fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    -*)
+      printf "Error: unknown option '%s'.\n\n" "$1" >&2
+      print_help
+      exit 1
+      ;;
+    *)
+      if [ -n "$workspace_name" ]; then
+        printf "Error: too many positional arguments.\n\n" >&2
+        print_help
+        exit 1
+      fi
+      workspace_name="$1"
+      shift
+      ;;
+  esac
+done
 
 require_cmd git
 require_cmd fzf
@@ -336,7 +351,6 @@ if [ "${#usable_search_roots[@]}" -eq 0 ]; then
   exit 1
 fi
 
-workspace_name="${1:-}"
 if [ -z "$workspace_name" ]; then
   workspace_name=$(select_workspace_name)
   if [ -z "$workspace_name" ]; then

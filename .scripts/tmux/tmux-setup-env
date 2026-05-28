@@ -13,18 +13,20 @@ EDITOR_CMD="${WS_EDITOR:-nvim}"
 CLEAR_CMD="${WS_CLEAR_CMD:-clear}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKSPACE_CREATE_CMD="$SCRIPT_DIR/../workspace/workspace-create"
+WORKSPACE_BOOTSTRAP_CMD="$SCRIPT_DIR/../workspace/workspace-bootstrap"
 
 workspace_path=""
 session_name=""
 skip_attach=0
 print_session=0
 session_file=""
+run_bootstrap=0
 
 print_help() {
   cat <<'EOF'
 Usage:
   tmux-setup-env
-  tmux-setup-env --workspace <path> [--session <name>] [--no-attach] [--print-session] [--session-file <path>]
+  tmux-setup-env --workspace <path> [--session <name>] [--no-attach] [--bootstrap] [--print-session] [--session-file <path>]
 
 Description:
   Setup a tmux session for a development workspace.
@@ -33,6 +35,7 @@ Options:
   --workspace <path>  Workspace path to setup.
   --session <name>    Session name override.
   -n, --no-attach     Do not attach/switch after setup.
+  --bootstrap         Run workspace-bootstrap in a tmux window.
   --print-session     Print session name after setup.
   --session-file      Write session name to file after setup.
   -h, --help          Show this help message.
@@ -169,6 +172,22 @@ setup_project_window() {
   tmux send-keys -t "$sess":"$win".2 "$CLEAR_CMD" C-m
 }
 
+run_bootstrap_window() {
+  local sess="$1"
+  local workspace="$2"
+  local bootstrap_window="bootstrap"
+  local bootstrap_cmd
+
+  if window_exists "$sess" "$bootstrap_window"; then
+    tmux kill-window -t "$sess":"$bootstrap_window"
+  fi
+
+  tmux new-window -t "$sess" -n "$bootstrap_window" -c "$workspace"
+
+  bootstrap_cmd="\"$WORKSPACE_BOOTSTRAP_CMD\" \"$workspace\"; status=\$?; if [ \$status -eq 0 ]; then tmux kill-window -t \"$sess:$bootstrap_window\"; else printf '\\nBootstrap failed (exit %s). Press ENTER to keep this window.\\n' \"\$status\"; read -r _; fi"
+  tmux send-keys -t "$sess":"$bootstrap_window" "$bootstrap_cmd" C-m
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --workspace)
@@ -189,6 +208,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     -n|--no-attach)
       skip_attach=1
+      shift
+      ;;
+    --bootstrap)
+      run_bootstrap=1
       shift
       ;;
     --print-session)
@@ -219,6 +242,7 @@ require_cmd tmux
 require_cmd git
 require_cmd fzf
 require_cmd "$WORKSPACE_CREATE_CMD"
+require_cmd "$WORKSPACE_BOOTSTRAP_CMD"
 require_cmd find
 require_cmd comm
 require_cmd sed
@@ -281,6 +305,10 @@ for dir in "${project_dirs[@]}"; do
   fi
   setup_project_window "$session_name" "$window_name" "$dir"
 done
+
+if [ "$run_bootstrap" -eq 1 ]; then
+  run_bootstrap_window "$session_name" "$workspace_path"
+fi
 
 tmux select-window -t "$session_name":workspace
 

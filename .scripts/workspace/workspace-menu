@@ -13,6 +13,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKSPACE_CREATE_CMD="$SCRIPT_DIR/workspace-create"
 WORKSPACE_REMOVE_CMD="$SCRIPT_DIR/workspace-remove"
 WORKSPACE_EDIT_CMD="$SCRIPT_DIR/workspace-edit"
+WORKSPACE_BOOTSTRAP_CMD="$SCRIPT_DIR/workspace-bootstrap"
+TMUX_SETUP_ENV_CMD="$SCRIPT_DIR/../tmux/tmux-setup-env"
 
 print_help() {
   cat <<'EOF'
@@ -21,6 +23,7 @@ Usage:
   workspace-menu open <workspace_name>
   workspace-menu create <workspace_name>
   workspace-menu edit <workspace_name>
+  workspace-menu bootstrap <workspace_name>
   workspace-menu remove <workspace_name>
   workspace-menu list
 
@@ -28,8 +31,10 @@ Description:
   Manage development workspaces with an interactive menu or direct commands.
 
 Behavior:
-  - open/create: opens target in tmux-sessionizer and exits.
+  - open: opens workspace in tmux-setup-env without bootstrap.
+  - create: creates workspace and opens target in tmux-setup-env with bootstrap.
   - edit: calls workspace-edit.
+  - bootstrap: calls workspace-bootstrap.
   - remove: calls workspace-remove.
 
 Options:
@@ -72,7 +77,15 @@ open_workspace() {
   local path
   path=$(workspace_path_from_name "$name")
   ensure_workspace_exists "$name"
-  tmux-sessionizer "$path"
+  "$TMUX_SETUP_ENV_CMD" --workspace "$path"
+}
+
+open_workspace_with_bootstrap() {
+  local name="$1"
+  local path
+  path=$(workspace_path_from_name "$name")
+  ensure_workspace_exists "$name"
+  "$TMUX_SETUP_ENV_CMD" --workspace "$path" --bootstrap
 }
 
 create_and_open_workspace() {
@@ -101,7 +114,7 @@ create_and_open_workspace() {
     exit 0
   fi
 
-  open_workspace "$selected"
+  open_workspace_with_bootstrap "$selected"
 }
 
 create_and_open_workspace_named() {
@@ -113,7 +126,8 @@ create_and_open_workspace_named() {
     printf "Workspace creation did not produce: %s\n" "$path" >&2
     exit 1
   fi
-  open_workspace "$name"
+
+  open_workspace_with_bootstrap "$name"
 }
 
 remove_workspace() {
@@ -126,6 +140,11 @@ edit_workspace() {
   "$WORKSPACE_EDIT_CMD" "$name"
 }
 
+bootstrap_workspace() {
+  local name="$1"
+  "$WORKSPACE_BOOTSTRAP_CMD" "$name"
+}
+
 select_workspace_name() {
   local selection
   selection=$(list_workspaces | fzf --prompt="Select workspace > " --height=60% --header="ENTER confirm | ESC cancel") || true
@@ -134,7 +153,7 @@ select_workspace_name() {
 
 interactive_menu() {
   local action
-  action=$(printf "%s\n" "open" "create" "edit" "remove" "exit" | fzf --prompt="Workspace action > " --height=40% --header="ENTER confirm | ESC cancel") || true
+  action=$(printf "%s\n" "open" "create" "edit" "bootstrap" "remove" "exit" | fzf --prompt="Workspace action > " --height=40% --header="ENTER confirm | ESC cancel") || true
 
   if [ -z "$action" ] || [ "$action" = "exit" ]; then
     exit 0
@@ -177,6 +196,17 @@ interactive_menu() {
     edit_workspace "$selected"
     exit 0
   fi
+
+  if [ "$action" = "bootstrap" ]; then
+    local selected
+    selected=$(select_workspace_name)
+    if [ -z "$selected" ]; then
+      printf "Cancelled.\n"
+      exit 0
+    fi
+    bootstrap_workspace "$selected"
+    exit 0
+  fi
 }
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -188,7 +218,8 @@ require_cmd git
 require_cmd "$WORKSPACE_CREATE_CMD"
 require_cmd "$WORKSPACE_REMOVE_CMD"
 require_cmd "$WORKSPACE_EDIT_CMD"
-require_cmd tmux-sessionizer
+require_cmd "$WORKSPACE_BOOTSTRAP_CMD"
+require_cmd "$TMUX_SETUP_ENV_CMD"
 
 if [ "$#" -eq 0 ]; then
   require_cmd fzf
@@ -224,6 +255,13 @@ case "$1" in
       exit 1
     fi
     edit_workspace "$2"
+    ;;
+  bootstrap)
+    if [ "$#" -ne 2 ]; then
+      printf "Usage: workspace-menu bootstrap <workspace_name>\n" >&2
+      exit 1
+    fi
+    bootstrap_workspace "$2"
     ;;
   list)
     if [ "$#" -ne 1 ]; then
