@@ -233,6 +233,7 @@ copied_count=0
 npm_count=0
 composer_count=0
 cache_count=0
+laravel_tmp_count=0
 failed_count=0
 
 for project_dir in "${project_dirs[@]}"; do
@@ -263,6 +264,20 @@ for project_dir in "${project_dirs[@]}"; do
   is_laravel=0
   if [ -f "$project_dir/artisan" ] && [ -f "$project_dir/composer.json" ]; then
     is_laravel=1
+  fi
+
+  if [ "$is_laravel" -eq 1 ]; then
+    base_tmp_dir="$base_project_dir/storage/app/tmp"
+    workspace_tmp_dir="$project_dir/storage/app/tmp"
+    if [ -d "$base_tmp_dir" ]; then
+      if [ -d "$workspace_tmp_dir" ]; then
+        printf "skip-laravel-tmp-dir (exists): %s\n" "$workspace_tmp_dir"
+      else
+        run_or_print mkdir -p "$workspace_tmp_dir"
+        printf "created-laravel-tmp-dir: %s\n" "$workspace_tmp_dir"
+        laravel_tmp_count=$((laravel_tmp_count + 1))
+      fi
+    fi
   fi
 
   if [ -f "$project_dir/package.json" ] && [ "$is_laravel" -eq 0 ]; then
@@ -299,6 +314,7 @@ printf "Copied items: %d\n" "$copied_count"
 printf "npm installs: %d\n" "$npm_count"
 printf "composer installs: %d\n" "$composer_count"
 printf "Laravel config cache: %d\n" "$cache_count"
+printf "Laravel tmp dirs created: %d\n" "$laravel_tmp_count"
 printf "Failures: %d\n" "$failed_count"
 
 if [ "$failed_count" -gt 0 ]; then

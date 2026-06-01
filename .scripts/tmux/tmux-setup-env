@@ -296,13 +296,15 @@ if [ -n "$session_notes_dir" ]; then
   fi
 fi
 
-for dir in "${project_dirs[@]}"; do
-  window_name=$(sanitize_name "$(basename "$dir")")
-  if [ -z "$window_name" ] || [ "$window_name" = "workspace" ]; then
-    continue
-  fi
-  setup_project_window "$session_name" "$window_name" "$dir"
-done
+if [ "${#project_dirs[@]}" -gt 0 ]; then
+  for dir in "${project_dirs[@]}"; do
+    window_name=$(sanitize_name "$(basename "$dir")")
+    if [ -z "$window_name" ] || [ "$window_name" = "workspace" ]; then
+      continue
+    fi
+    setup_project_window "$session_name" "$window_name" "$dir"
+  done
+fi
 
 if [ "$run_bootstrap" -eq 1 ]; then
   run_bootstrap_window "$session_name" "$workspace_path"
