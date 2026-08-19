@@ -11,9 +11,9 @@ fi
 WORKSPACES_ROOT="${WS_WORKSPACES_ROOT:-$HOME/Development/workspaces}"
 EDITOR_CMD="${WS_EDITOR:-nvim}"
 CLEAR_CMD="${WS_CLEAR_CMD:-clear}"
+CODEGROVE_CMD="${WS_CODEGROVE:-cg}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKSPACE_CREATE_CMD="$SCRIPT_DIR/../workspace/workspace-create"
-WORKSPACE_BOOTSTRAP_CMD="$SCRIPT_DIR/../workspace/workspace-bootstrap"
 
 workspace_path=""
 session_name=""
@@ -35,7 +35,7 @@ Options:
   --workspace <path>  Workspace path to setup.
   --session <name>    Session name override.
   -n, --no-attach     Do not attach/switch after setup.
-  --bootstrap         Run workspace-bootstrap in a tmux window.
+  --bootstrap         Run codegrove bootstrap in a tmux window.
   --print-session     Print session name after setup.
   --session-file      Write session name to file after setup.
   -h, --help          Show this help message.
@@ -183,7 +183,7 @@ run_bootstrap_window() {
 
   tmux new-window -t "$sess" -n "$bootstrap_window" -c "$workspace"
 
-  tmux send-keys -t "$sess":"$bootstrap_window" "\"$WORKSPACE_BOOTSTRAP_CMD\" \"$workspace\"" C-m
+  tmux send-keys -t "$sess":"$bootstrap_window" "\"$CODEGROVE_CMD\" bootstrap \"$workspace\"" C-m
 }
 
 while [ "$#" -gt 0 ]; do
@@ -240,11 +240,14 @@ require_cmd tmux
 require_cmd git
 require_cmd fzf
 require_cmd "$WORKSPACE_CREATE_CMD"
-require_cmd "$WORKSPACE_BOOTSTRAP_CMD"
 require_cmd find
 require_cmd comm
 require_cmd sed
 require_cmd wc
+
+if [ "$run_bootstrap" -eq 1 ]; then
+  require_cmd "$CODEGROVE_CMD"
+fi
 
 if ! command -v "$CLEAR_CMD" >/dev/null 2>&1; then
   CLEAR_CMD="clear"

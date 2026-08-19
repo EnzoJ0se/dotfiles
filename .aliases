@@ -19,7 +19,8 @@ alias change-php-version='sudo update-alternatives --config php'
 alias pip=pip3
 
 # Laravel aliases
-alias artisan='php artisan'
+alias pa='php artisan'
+alias pas='php artisan serve'
 alias p-serve='php artisan serve'
 alias tinker='php artisan tinker'
 alias config-cache='php artisan config:cache'
@@ -48,3 +49,8 @@ alias test-ngt="build-ngt && update-ngt-dist && remove-dot-angular && npm run se
 ### MongoDB Aliases
 alias start-mongo-mac='brew services start mongodb-community@7.0'
 alias stop-mongo-mac='brew services stop mongodb-community@7.0'
+
+### Squid (MAC)
+alias start-squid-mac='brew services start squid'
+alias stop-squid-mac='brew services stop squid'
+alias restart-squid-mac='brew services restart squid'
